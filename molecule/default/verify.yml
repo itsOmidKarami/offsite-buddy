@@ -13,6 +13,19 @@
         path: /etc/offsitebuddy/jobs/photos_to_bob/backup.sh
       register: backup_script
 
+    - name: Stat client job outputs
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/offsitebuddy/jobs/photos_to_bob/compose.yaml
+        - /etc/offsitebuddy/jobs/photos_to_bob/excludes
+        - /etc/offsitebuddy/jobs/photos_to_bob/init.sh
+        - /etc/offsitebuddy/jobs/photos_to_bob/check.sh
+        - /etc/offsitebuddy/jobs/photos_to_bob/restore-latest.sh
+        - /etc/offsitebuddy/jobs/photos_to_bob/snapshots.sh
+        - /etc/offsitebuddy/jobs/photos_to_bob/stats.sh
+      register: client_output_stats
+
     - name: Stat client secret files
       ansible.builtin.stat:
         path: "{{ item }}"
@@ -41,6 +54,7 @@
             '--append-only' in (server_compose.content | b64decode)
           - >-
             'curl -fsS' in (backup_script.content | b64decode)
+          - client_output_stats.results | map(attribute='stat.exists') | min
           - >-
             client_secret_stats.results | map(attribute='stat.mode') | list
             == ['0600', '0600']

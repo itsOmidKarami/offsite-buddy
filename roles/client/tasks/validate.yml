@@ -22,8 +22,7 @@
       - item.retention.keep_weekly | default(0) | int >= 0
       - item.retention.keep_monthly | default(0) | int >= 0
       - item.check is defined
-      - item.check.enabled is defined
-      - item.check.read_data is defined
+      - item.check is mapping
     fail_msg: >-
       Each client job needs name, repository, password, schedule,
       backup_paths, retention, and check settings.
