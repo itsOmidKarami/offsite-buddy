@@ -11,7 +11,7 @@
   ansible.builtin.assert:
     that:
       - item.name is defined
-      - item.name | regex_search('^[a-z][a-z0-9_-]*$')
+      - item.name | regex_search('^[a-z][a-z0-9_-]*$') is not none
       - item.repository is defined
       - item.password is defined
       - item.schedule is defined

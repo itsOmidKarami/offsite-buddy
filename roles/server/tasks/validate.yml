@@ -18,7 +18,7 @@
   ansible.builtin.assert:
     that:
       - item.name is defined
-      - item.name | regex_search('^[a-z][a-z0-9_-]*$')
+      - item.name | regex_search('^[a-z][a-z0-9_-]*$') is not none
       - item.quota is defined
       - item.quota.backend | default('') == 'existing_path'
       - item.quota.path is defined
