@@ -86,6 +86,7 @@
   vars:
     job: "{{ item.0 }}"
     helper: "{{ item.1 }}"
+    job_check: "{{ item.0.check | default({}) }}"
 
 - name: Initialize missing restic repositories
   ansible.builtin.command:

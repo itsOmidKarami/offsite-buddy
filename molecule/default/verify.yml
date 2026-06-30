@@ -13,6 +13,11 @@
         path: /etc/offsitebuddy/jobs/photos_to_bob/backup.sh
       register: backup_script
 
+    - name: Read client check timer
+      ansible.builtin.slurp:
+        path: /etc/systemd/system/offsitebuddy-check-photos_to_bob.timer
+      register: check_timer
+
     - name: Stat client job outputs
       ansible.builtin.stat:
         path: "{{ item }}"
@@ -54,6 +59,8 @@
             '--append-only' in (server_compose.content | b64decode)
           - >-
             'curl -fsS' in (backup_script.content | b64decode)
+          - >-
+            'OnCalendar=weekly' in (check_timer.content | b64decode)
           - client_output_stats.results | map(attribute='stat.exists') | min
           - >-
             client_secret_stats.results | map(attribute='stat.mode') | list

@@ -35,10 +35,6 @@
           keep_daily: 7
           keep_weekly: 4
           keep_monthly: 12
-        check:
-          enabled: true
-          schedule: weekly
-          read_data: false
         heartbeat:
           start_url: ""
           success_url: ""

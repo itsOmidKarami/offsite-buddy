@@ -4,7 +4,7 @@ set -euo pipefail
 job_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 args=(check)
-{% if job.check.read_data | default(false) | bool %}
+{% if job_check.read_data | default(false) | bool %}
 args+=(--read-data)
 {% endif %}
 

@@ -21,11 +21,10 @@
       - item.retention.keep_daily | default(0) | int >= 0
       - item.retention.keep_weekly | default(0) | int >= 0
       - item.retention.keep_monthly | default(0) | int >= 0
-      - item.check is defined
-      - item.check is mapping
+      - item.check is not defined or item.check is mapping
     fail_msg: >-
       Each client job needs name, repository, password, schedule,
-      backup_paths, retention, and check settings.
+      backup_paths, retention, and an optional check mapping.
   loop: "{{ offsitebuddy_client_jobs }}"
   loop_control:
     label: "{{ item.name | default('missing-name') }}"

@@ -36,7 +36,7 @@
   loop_control:
     loop_var: job
     label: "{{ job.name }}"
-  when: job.check.enabled | default(true) | bool
+  when: (job.check | default({})).enabled | default(true) | bool
   notify: Reload systemd
 
 - name: Write check systemd timers
@@ -50,7 +50,7 @@
   loop_control:
     loop_var: job
     label: "{{ job.name }}"
-  when: job.check.enabled | default(true) | bool
+  when: (job.check | default({})).enabled | default(true) | bool
   notify: Reload systemd
 
 - name: Stat stale check timer files
@@ -78,7 +78,7 @@
     label: "{{ item.0.name }}"
   when:
     - offsitebuddy_start_services | bool
-    - not (item.0.check.enabled | default(true) | bool)
+    - not ((item.0.check | default({})).enabled | default(true) | bool)
     - item.1.stat.exists
 
 - name: Remove stale check unit files
@@ -91,7 +91,7 @@
     label: "{{ item.0.name }} {{ item.1 }}"
   when:
     - offsitebuddy_start_services | bool
-    - not (item.0.check.enabled | default(true) | bool)
+    - not ((item.0.check | default({})).enabled | default(true) | bool)
   notify: Reload systemd
 
 - name: Enable backup timers
@@ -118,4 +118,4 @@
     label: "{{ job.name }}"
   when:
     - offsitebuddy_start_services | bool
-    - job.check.enabled | default(true) | bool
+    - (job.check | default({})).enabled | default(true) | bool

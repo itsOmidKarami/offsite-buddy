@@ -103,6 +103,32 @@
 
 - `4113bac feat: render client restic jobs and timers`
 
+## Fix Round 3
+
+### What I Changed
+
+- Made `job.check` optional in `roles/client/tasks/validate.yml`.
+- Normalized client check lookups to default from an empty mapping before reading `enabled`, `schedule`, or `read_data`:
+  - `roles/client/tasks/systemd.yml`
+  - `roles/client/tasks/restic.yml`
+  - `roles/client/templates/check.sh.j2`
+  - `roles/client/templates/offsitebuddy-check.timer.j2`
+- Removed the explicit `check` block from `molecule/default/converge.yml` so the default path is exercised.
+- Added a Molecule verify assertion for the rendered check timer’s default weekly schedule.
+
+### Verification
+
+- `env PATH=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/venv/bin:$PATH yamllint roles/client molecule/default/verify.yml`
+  - PASS
+- `env PATH=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/venv/bin:$PATH HOME=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/home ANSIBLE_HOME=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/home/.ansible ANSIBLE_GALAXY_TOKEN_PATH=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/home/.ansible/galaxy_token ANSIBLE_LOCAL_TEMP=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/ansible-tmp ANSIBLE_REMOTE_TEMP=/tmp/.ansible/tmp ansible-playbook --syntax-check molecule/default/converge.yml`
+  - PASS
+- `env PATH=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/venv/bin:$PATH HOME=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/home ANSIBLE_HOME=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/home/.ansible ANSIBLE_GALAXY_TOKEN_PATH=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/home/.ansible/galaxy_token ANSIBLE_LOCAL_TEMP=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/ansible-tmp ANSIBLE_REMOTE_TEMP=/tmp/.ansible/tmp ansible-playbook --syntax-check molecule/default/verify.yml`
+  - PASS
+- `git diff --check`
+  - PASS
+- `env PATH=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/venv/bin:$PATH HOME=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/home ANSIBLE_HOME=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/home/.ansible ANSIBLE_GALAXY_TOKEN_PATH=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/home/.ansible/galaxy_token ANSIBLE_LOCAL_TEMP=/Users/omidkarami/Projects/offsite-buddy/.superpowers/sdd/ansible-tmp ANSIBLE_REMOTE_TEMP=/tmp/.ansible/tmp molecule verify`
+  - FAIL: Molecule reached the Docker sanity check and stopped with `Unable to contact the Docker daemon`.
+
 ## Fix Round 2
 
 ### What I Changed
