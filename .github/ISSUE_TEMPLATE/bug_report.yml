@@ -1,3 +1,4 @@
+---
 name: Bug report
 description: Report something that is broken or unsafe.
 title: "[bug]: "
@@ -19,7 +20,8 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: OS, Ansible version, Docker version, and OffsiteBuddy version.
+      description: >-
+        OS, Ansible version, Docker version, and OffsiteBuddy version.
     validations:
       required: true
   - type: textarea
