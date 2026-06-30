@@ -34,8 +34,10 @@
   loop: "{{ offsitebuddy_friends }}"
   loop_control:
     loop_var: friend
+    index_var: friend_index
     label: "{{ friend.name }}"
   no_log: true
+  register: rest_server_env_render
 
 - name: Write per-friend htpasswd file
   community.general.htpasswd:
@@ -49,8 +51,10 @@
   loop: "{{ offsitebuddy_friends }}"
   loop_control:
     loop_var: friend
+    index_var: friend_index
     label: "{{ friend.name }}"
   no_log: true
+  register: rest_server_htpasswd_render
 
 - name: Write per-friend Compose file
   ansible.builtin.template:
@@ -63,7 +67,9 @@
   loop: "{{ offsitebuddy_friends }}"
   loop_control:
     loop_var: friend
+    index_var: friend_index
     label: "{{ friend.name }}"
+  register: rest_server_compose_render
 
 - name: Start per-friend server stacks
   community.docker.docker_compose_v2:
@@ -76,3 +82,19 @@
     loop_var: friend
     label: "{{ friend.name }}"
   when: offsitebuddy_start_services | bool
+
+- name: Restart changed friend server stacks
+  community.docker.docker_compose_v2:
+    project_src: "{{ offsitebuddy_server_root }}/friends/{{ friend.name }}"
+    state: restarted
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    loop_var: friend
+    index_var: friend_index
+    label: "{{ friend.name }}"
+  when:
+    - offsitebuddy_start_services | bool
+    - >-
+      rest_server_env_render.results[friend_index].changed or
+      rest_server_htpasswd_render.results[friend_index].changed or
+      rest_server_compose_render.results[friend_index].changed
