@@ -7,7 +7,7 @@ driver:
   name: docker
 platforms:
   - name: offsitebuddy-instance
-    image: debian:12
+    image: geerlingguy/docker-debian12-ansible:latest
     command: /sbin/init
     privileged: true
     pre_build_image: true
