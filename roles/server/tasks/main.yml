@@ -4,3 +4,9 @@
 
 - name: Validate OffsiteBuddy quota paths
   ansible.builtin.import_tasks: quota.yml
+
+- name: Prepare Docker Compose server directories
+  ansible.builtin.import_tasks: docker.yml
+
+- name: Render and start rest-server stacks
+  ansible.builtin.import_tasks: rest_server.yml

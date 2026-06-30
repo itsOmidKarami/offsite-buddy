@@ -1,0 +1,81 @@
+---
+- name: Ensure friend stack directories exist
+  ansible.builtin.file:
+    path: "{{ offsitebuddy_server_root }}/friends/{{ friend.name }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    loop_var: friend
+    label: "{{ friend.name }}"
+
+- name: Ensure friend tailscale state directories exist
+  ansible.builtin.file:
+    path: >-
+      {{ offsitebuddy_server_root }}/friends/{{ friend.name }}/tailscale-state
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    loop_var: friend
+    label: "{{ friend.name }}"
+
+- name: Write per-friend Tailscale environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ offsitebuddy_server_root }}/friends/{{ friend.name }}/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    loop_var: friend
+    label: "{{ friend.name }}"
+  no_log: true
+  notify: Restart friend stack
+
+- name: Write per-friend htpasswd file
+  community.general.htpasswd:
+    path: "{{ offsitebuddy_server_root }}/friends/{{ friend.name }}/htpasswd"
+    name: "{{ friend.rest_server.username }}"
+    password: "{{ friend.rest_server.password }}"
+    crypt_scheme: bcrypt
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    loop_var: friend
+    label: "{{ friend.name }}"
+  no_log: true
+  notify: Restart friend stack
+
+- name: Write per-friend Compose file
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: >-
+      {{ offsitebuddy_server_root }}/friends/{{ friend.name }}/compose.yaml
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    loop_var: friend
+    label: "{{ friend.name }}"
+  notify: Restart friend stack
+
+- name: Start per-friend server stacks
+  community.docker.docker_compose_v2:
+    project_src: >-
+      {{ offsitebuddy_server_root }}/friends/{{ friend.name }}
+    state: present
+    pull: missing
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    loop_var: friend
+    label: "{{ friend.name }}"
+  when: offsitebuddy_start_services | bool

@@ -3,24 +3,36 @@
   hosts: all
   become: true
   tasks:
-    - name: Check server compose exists
-      ansible.builtin.stat:
+    - name: Read server compose
+      ansible.builtin.slurp:
         path: /srv/offsitebuddy/friends/alice/compose.yaml
       register: server_compose
+
+    - name: Stat server secret files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /srv/offsitebuddy/friends/alice/.env
+        - /srv/offsitebuddy/friends/alice/htpasswd
+      register: server_secret_stats
 
     - name: Check client backup script exists
       ansible.builtin.stat:
         path: /etc/offsitebuddy/jobs/photos_to_bob/backup.sh
       register: client_backup_script
 
-    - name: Check quota path exists
-      ansible.builtin.stat:
-        path: /tmp/offsitebuddy-alice
-      register: quota_path
-
-    - name: Assert expected files and paths exist
+    - name: Assert server compose contains Tailscale and append-only rest-server
       ansible.builtin.assert:
         that:
-          - quota_path.stat.isdir
-          - server_compose.stat.exists
+          - >-
+            'tailscale/tailscale:stable' in
+            (server_compose.content | b64decode)
+          - >-
+            'restic/rest-server:0.14.0' in
+            (server_compose.content | b64decode)
+          - >-
+            '--append-only' in (server_compose.content | b64decode)
+          - >-
+            server_secret_stats.results | map(attribute='stat.mode') | list
+            == ['0600', '0600']
           - client_backup_script.stat.exists
