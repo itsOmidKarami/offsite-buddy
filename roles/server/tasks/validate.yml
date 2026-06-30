@@ -2,7 +2,7 @@
 - name: Validate offsitebuddy_friends is a list
   ansible.builtin.assert:
     that:
-      - offsitebuddy_friends is list
+      - offsitebuddy_friends | type_debug == 'list'
       - offsitebuddy_friends is not mapping
     fail_msg: >-
       offsitebuddy_friends must be a list of friend declarations.
