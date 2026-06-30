@@ -24,3 +24,5 @@ build_ignore:
   - .github
   - molecule
   - docs/superpowers
+  - .superpowers
+  - .superpowers/
