@@ -8,8 +8,7 @@ driver:
 platforms:
   - name: offsitebuddy-instance
     image: geerlingguy/docker-debian12-ansible:latest
-    command: /sbin/init
-    privileged: true
+    command: sleep infinity
     pre_build_image: true
 provisioner:
   name: ansible
