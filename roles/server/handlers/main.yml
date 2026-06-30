@@ -1,9 +1,1 @@
 ---
-- name: Restart friend stack
-  community.docker.docker_compose_v2:
-    project_src: "{{ offsitebuddy_server_root }}/friends/{{ item.name }}"
-    state: restarted
-  loop: "{{ offsitebuddy_friends }}"
-  loop_control:
-    label: "{{ item.name }}"
-  when: offsitebuddy_start_services | bool

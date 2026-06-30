@@ -12,7 +12,6 @@ services:
       - /dev/net/tun:/dev/net/tun
     cap_add:
       - NET_ADMIN
-      - SYS_MODULE
     restart: unless-stopped
 
   rest-server:

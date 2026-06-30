@@ -36,7 +36,6 @@
     loop_var: friend
     label: "{{ friend.name }}"
   no_log: true
-  notify: Restart friend stack
 
 - name: Write per-friend htpasswd file
   community.general.htpasswd:
@@ -52,7 +51,6 @@
     loop_var: friend
     label: "{{ friend.name }}"
   no_log: true
-  notify: Restart friend stack
 
 - name: Write per-friend Compose file
   ansible.builtin.template:
@@ -66,7 +64,6 @@
   loop_control:
     loop_var: friend
     label: "{{ friend.name }}"
-  notify: Restart friend stack
 
 - name: Start per-friend server stacks
   community.docker.docker_compose_v2:
