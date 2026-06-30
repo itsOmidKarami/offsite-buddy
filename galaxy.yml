@@ -8,6 +8,7 @@ description: Friend-to-friend off-site NAS backups with restic, rest-server, Doc
 license:
   - MIT
 tags:
+  - storage
   - backup
   - restic
   - nas
