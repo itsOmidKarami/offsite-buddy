@@ -1,0 +1,7 @@
+---
+offsitebuddy_server_root: /srv/offsitebuddy
+offsitebuddy_default_append_only: true
+offsitebuddy_rest_server_image: restic/rest-server:0.14.0
+offsitebuddy_tailscale_image: tailscale/tailscale:stable
+offsitebuddy_friends: []
+offsitebuddy_start_services: true

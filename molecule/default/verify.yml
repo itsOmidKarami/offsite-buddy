@@ -1,0 +1,20 @@
+---
+- name: Verify rendered files
+  hosts: all
+  become: true
+  tasks:
+    - name: Check server compose exists
+      ansible.builtin.stat:
+        path: /srv/offsitebuddy/friends/alice/compose.yaml
+      register: server_compose
+
+    - name: Check client backup script exists
+      ansible.builtin.stat:
+        path: /etc/offsitebuddy/jobs/photos_to_bob/backup.sh
+      register: client_backup_script
+
+    - name: Assert expected files exist
+      ansible.builtin.assert:
+        that:
+          - server_compose.stat.exists
+          - client_backup_script.stat.exists

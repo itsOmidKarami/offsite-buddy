@@ -1,0 +1,35 @@
+---
+- name: Validate offsitebuddy_friends is a list
+  ansible.builtin.assert:
+    that:
+      - offsitebuddy_friends is iterable
+      - offsitebuddy_friends is not string
+    fail_msg: >-
+      offsitebuddy_friends must be a list of friend declarations.
+
+- name: Validate each friend declaration
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.name | regex_search('^[a-z][a-z0-9_-]*$')
+      - item.quota is defined
+      - item.quota.backend | default('') == 'existing_path'
+      - item.quota.path is defined
+      - item.quota.size is defined
+      - item.quota.enforced | default(false) | bool
+      - item.quota.enforcement_note is defined
+      - item.tailscale is defined
+      - item.tailscale.hostname is defined
+      - item.tailscale.auth_key is defined
+      - item.rest_server is defined
+      - item.rest_server.username is defined
+      - item.rest_server.password is defined
+      - item.rest_server.port | default(8000) | int > 0
+      - item.rest_server.port | default(8000) | int < 65536
+    fail_msg: >-
+      Each friend needs name, existing_path quota with enforced=true,
+      Tailscale auth, and rest-server credentials.
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    label: "{{ item.name | default('missing-name') }}"
+  no_log: true
