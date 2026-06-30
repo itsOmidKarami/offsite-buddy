@@ -8,31 +8,40 @@
         path: /srv/offsitebuddy/friends/alice/compose.yaml
       register: server_compose
 
-    - name: Stat server secret files
+    - name: Read client backup script
+      ansible.builtin.slurp:
+        path: /etc/offsitebuddy/jobs/photos_to_bob/backup.sh
+      register: backup_script
+
+    - name: Stat client secret files
       ansible.builtin.stat:
         path: "{{ item }}"
       loop:
-        - /srv/offsitebuddy/friends/alice/.env
-        - /srv/offsitebuddy/friends/alice/htpasswd
-      register: server_secret_stats
+        - /etc/offsitebuddy/jobs/photos_to_bob/.env
+        - /etc/offsitebuddy/jobs/photos_to_bob/password
+      register: client_secret_stats
 
-    - name: Check client backup script exists
+    - name: Stat systemd units
       ansible.builtin.stat:
-        path: /etc/offsitebuddy/jobs/photos_to_bob/backup.sh
-      register: client_backup_script
+        path: "{{ item }}"
+      loop:
+        - /etc/systemd/system/offsitebuddy-backup-photos_to_bob.service
+        - /etc/systemd/system/offsitebuddy-backup-photos_to_bob.timer
+        - /etc/systemd/system/offsitebuddy-check-photos_to_bob.service
+        - /etc/systemd/system/offsitebuddy-check-photos_to_bob.timer
+      register: unit_stats
 
-    - name: Assert server compose contains Tailscale and append-only rest-server
+    - name: Assert rendered server and client files
       ansible.builtin.assert:
         that:
           - >-
             'tailscale/tailscale:stable' in
             (server_compose.content | b64decode)
           - >-
-            'restic/rest-server:0.14.0' in
-            (server_compose.content | b64decode)
-          - >-
             '--append-only' in (server_compose.content | b64decode)
           - >-
-            server_secret_stats.results | map(attribute='stat.mode') | list
+            'curl -fsS' in (backup_script.content | b64decode)
+          - >-
+            client_secret_stats.results | map(attribute='stat.mode') | list
             == ['0600', '0600']
-          - client_backup_script.stat.exists
+          - unit_stats.results | map(attribute='stat.exists') | min

@@ -1,3 +1,12 @@
 ---
 - name: Validate OffsiteBuddy client configuration
   ansible.builtin.import_tasks: validate.yml
+
+- name: Prepare client Docker Compose directories
+  ansible.builtin.import_tasks: docker.yml
+
+- name: Render restic jobs
+  ansible.builtin.import_tasks: restic.yml
+
+- name: Install systemd timers
+  ansible.builtin.import_tasks: systemd.yml

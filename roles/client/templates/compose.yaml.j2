@@ -1,0 +1,14 @@
+---
+services:
+  restic:
+    image: "{{ offsitebuddy_restic_image }}"
+    env_file:
+      - .env
+    volumes:
+      - ./password:/run/secrets/restic-password:ro
+      - ./excludes:/etc/offsitebuddy/excludes:ro
+{% for path in job.backup_paths %}
+      - "{{ path }}:{{ path }}:ro"
+{% endfor %}
+    entrypoint:
+      - restic

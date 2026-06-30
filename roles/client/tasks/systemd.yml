@@ -1,0 +1,80 @@
+---
+- name: Write backup systemd services
+  ansible.builtin.template:
+    src: offsitebuddy-backup.service.j2
+    dest: "/etc/systemd/system/offsitebuddy-backup-{{ job.name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  notify: Reload systemd
+
+- name: Write backup systemd timers
+  ansible.builtin.template:
+    src: offsitebuddy-backup.timer.j2
+    dest: "/etc/systemd/system/offsitebuddy-backup-{{ job.name }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  notify: Reload systemd
+
+- name: Write check systemd services
+  ansible.builtin.template:
+    src: offsitebuddy-check.service.j2
+    dest: "/etc/systemd/system/offsitebuddy-check-{{ job.name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  when: job.check.enabled | default(true) | bool
+  notify: Reload systemd
+
+- name: Write check systemd timers
+  ansible.builtin.template:
+    src: offsitebuddy-check.timer.j2
+    dest: "/etc/systemd/system/offsitebuddy-check-{{ job.name }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  when: job.check.enabled | default(true) | bool
+  notify: Reload systemd
+
+- name: Enable backup timers
+  ansible.builtin.systemd:
+    name: "offsitebuddy-backup-{{ job.name }}.timer"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  when: offsitebuddy_start_services | bool
+
+- name: Enable check timers
+  ansible.builtin.systemd:
+    name: "offsitebuddy-check-{{ job.name }}.timer"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  when:
+    - offsitebuddy_start_services | bool
+    - job.check.enabled | default(true) | bool

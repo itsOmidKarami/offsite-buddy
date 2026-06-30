@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+job_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+ping_url() {
+  local url="${1:-}"
+  if [[ -n "$url" ]]; then
+    curl -fsS --retry 3 --max-time 10 "$url" >/dev/null
+  fi
+}
+
+ping_url "{{ job.heartbeat.start_url | default('') }}"
+
+if docker compose --project-directory "$job_dir" run --rm restic backup {% for path in job.backup_paths %}{{ path | quote }} {% endfor %}--exclude-file /etc/offsitebuddy/excludes; then
+  ping_url "{{ job.heartbeat.success_url | default('') }}"
+else
+  ping_url "{{ job.heartbeat.failure_url | default('') }}"
+  exit 1
+fi
