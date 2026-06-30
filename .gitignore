@@ -1,0 +1,6 @@
+.DS_Store
+*.tar.gz
+.ansible/
+.pytest_cache/
+.molecule/
+__pycache__/
