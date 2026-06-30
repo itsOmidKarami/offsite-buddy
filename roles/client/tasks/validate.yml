@@ -2,8 +2,8 @@
 - name: Validate offsitebuddy_client_jobs is a list
   ansible.builtin.assert:
     that:
-      - offsitebuddy_client_jobs is iterable
-      - offsitebuddy_client_jobs is not string
+      - offsitebuddy_client_jobs is list
+      - offsitebuddy_client_jobs is not mapping
     fail_msg: >-
       offsitebuddy_client_jobs must be a list of backup job declarations.
 

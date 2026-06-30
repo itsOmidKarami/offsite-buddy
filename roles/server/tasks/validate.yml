@@ -2,10 +2,17 @@
 - name: Validate offsitebuddy_friends is a list
   ansible.builtin.assert:
     that:
-      - offsitebuddy_friends is iterable
-      - offsitebuddy_friends is not string
+      - offsitebuddy_friends is list
+      - offsitebuddy_friends is not mapping
     fail_msg: >-
       offsitebuddy_friends must be a list of friend declarations.
+
+- name: Validate append-only mode is enforced
+  ansible.builtin.assert:
+    that:
+      - offsitebuddy_default_append_only | bool
+    fail_msg: >-
+      offsitebuddy_default_append_only must be true for v0.1.
 
 - name: Validate each friend declaration
   ansible.builtin.assert:
