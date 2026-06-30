@@ -13,6 +13,11 @@
         path: /etc/offsitebuddy/jobs/photos_to_bob/backup.sh
       register: backup_script
 
+    - name: Read client compose
+      ansible.builtin.slurp:
+        path: /etc/offsitebuddy/jobs/photos_to_bob/compose.yaml
+      register: client_compose
+
     - name: Read client check timer
       ansible.builtin.slurp:
         path: /etc/systemd/system/offsitebuddy-check-photos_to_bob.timer
@@ -49,9 +54,68 @@
         - /etc/systemd/system/offsitebuddy-check-photos_to_bob.timer
       register: unit_stats
 
+    - name: Verify helper script syntax
+      ansible.builtin.command:
+        cmd: "bash -n {{ item }}"
+      loop:
+        - /etc/offsitebuddy/jobs/photos_to_bob/backup.sh
+        - /etc/offsitebuddy/jobs/photos_to_bob/init.sh
+        - /etc/offsitebuddy/jobs/photos_to_bob/check.sh
+        - /etc/offsitebuddy/jobs/photos_to_bob/restore-latest.sh
+        - /etc/offsitebuddy/jobs/photos_to_bob/snapshots.sh
+        - /etc/offsitebuddy/jobs/photos_to_bob/stats.sh
+      changed_when: false
+
+    - name: Check Docker Compose availability
+      ansible.builtin.command:
+        cmd: docker compose version
+      register: docker_compose_check
+      failed_when: false
+      changed_when: false
+
+    - name: Verify rendered Compose config when available
+      ansible.builtin.command:
+        cmd: "docker compose --project-directory {{ item }} config --quiet"
+      loop:
+        - /srv/offsitebuddy/friends/alice
+        - /etc/offsitebuddy/jobs/photos_to_bob
+      when: docker_compose_check.rc == 0
+      changed_when: false
+
+    - name: Check systemd-analyze availability
+      ansible.builtin.command:
+        cmd: systemd-analyze --version
+      register: systemd_analyze_check
+      failed_when: false
+      changed_when: false
+
+    - name: Verify rendered systemd unit syntax when available
+      ansible.builtin.command:
+        cmd: >-
+          systemd-analyze verify
+          /etc/systemd/system/offsitebuddy-backup-photos_to_bob.service
+          /etc/systemd/system/offsitebuddy-backup-photos_to_bob.timer
+          /etc/systemd/system/offsitebuddy-check-photos_to_bob.service
+          /etc/systemd/system/offsitebuddy-check-photos_to_bob.timer
+      when: systemd_analyze_check.rc == 0
+      changed_when: false
+
+    - name: Parse rendered Compose files
+      ansible.builtin.set_fact:
+        server_yaml: "{{ server_compose.content | b64decode | from_yaml }}"
+        client_yaml: "{{ client_compose.content | b64decode | from_yaml }}"
+
     - name: Assert rendered server and client files
       ansible.builtin.assert:
         that:
+          - >-
+            server_yaml.services.tailscale.image ==
+            'tailscale/tailscale:stable'
+          - >-
+            server_yaml.services['rest-server'].environment.OPTIONS
+            is search('--append-only')
+          - >-
+            client_yaml.services.restic.entrypoint == ['restic']
           - >-
             'tailscale/tailscale:stable' in
             (server_compose.content | b64decode)

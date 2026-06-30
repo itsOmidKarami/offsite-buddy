@@ -2,6 +2,10 @@
 
 v0.1 keeps rest-server append-only by default.
 
+Retention is metadata only in v0.1. OffsiteBuddy does not enforce retention
+automatically while rest-server stays append-only; use the configured retention
+values as the target for manual maintenance.
+
 Do not schedule automatic destructive prune. Use an admin maintenance window:
 
 1. Confirm the client retention intent.

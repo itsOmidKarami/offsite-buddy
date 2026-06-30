@@ -16,6 +16,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Run static regression checks
+        run: python tests/test_review_fixes.py
       - name: Install tools
         run: |
           python -m pip install --upgrade pip

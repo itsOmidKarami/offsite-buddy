@@ -13,11 +13,11 @@ ping_url() {
   fi
 }
 
-ping_url "{{ job.heartbeat.start_url | default('') }}" "start"
+ping_url {{ job.heartbeat.start_url | default('') | quote }} "start"
 
 if docker compose --project-directory "$job_dir" run --rm restic backup {% for path in job.backup_paths %}{{ path | quote }} {% endfor %}--exclude-file /etc/offsitebuddy/excludes; then
-  ping_url "{{ job.heartbeat.success_url | default('') }}" "success"
+  ping_url {{ job.heartbeat.success_url | default('') | quote }} "success"
 else
-  ping_url "{{ job.heartbeat.failure_url | default('') }}" "failure"
+  ping_url {{ job.heartbeat.failure_url | default('') | quote }} "failure"
   exit 1
 fi
