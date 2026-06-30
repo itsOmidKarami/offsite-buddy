@@ -5,5 +5,8 @@
   loop_control:
     loop_var: offsitebuddy_quota_item
     label: >-
-      {{ offsitebuddy_quota_item.name | default(
-      offsitebuddy_quota_item.path | default('quota-item')) }}
+      {{
+        offsitebuddy_quota_item.name
+        | default(offsitebuddy_quota_item.path)
+        | default('quota-item')
+      }}

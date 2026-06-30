@@ -5,3 +5,13 @@ ignore: |
   .ansible/
   .superpowers/
   collections/
+
+rules:
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: false
+  braces:
+    max-spaces-inside: 1
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true

@@ -1,0 +1,4 @@
+---
+# Public offsitebuddy_* variables are the collection API by design.
+skip_list:
+  - var-naming[no-role-prefix]
