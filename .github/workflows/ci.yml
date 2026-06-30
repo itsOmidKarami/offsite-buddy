@@ -23,5 +23,9 @@ jobs:
         run: |
           ansible-lint
           yamllint .
+      - name: Run Molecule converge
+        run: molecule converge
+      - name: Run Molecule verify
+        run: molecule verify
       - name: Build collection
         run: ansible-galaxy collection build --force

@@ -5,16 +5,19 @@ job_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 ping_url() {
   local url="${1:-}"
+  local label="${2:-heartbeat}"
   if [[ -n "$url" ]]; then
-    curl -fsS --retry 3 --max-time 10 "$url" >/dev/null
+    if ! curl -fsS --retry 3 --max-time 10 "$url" >/dev/null; then
+      printf 'warning: %s ping failed for %s\n' "$label" "$url" >&2
+    fi
   fi
 }
 
-ping_url "{{ job.heartbeat.start_url | default('') }}"
+ping_url "{{ job.heartbeat.start_url | default('') }}" "start"
 
 if docker compose --project-directory "$job_dir" run --rm restic backup {% for path in job.backup_paths %}{{ path | quote }} {% endfor %}--exclude-file /etc/offsitebuddy/excludes; then
-  ping_url "{{ job.heartbeat.success_url | default('') }}"
+  ping_url "{{ job.heartbeat.success_url | default('') }}" "success"
 else
-  ping_url "{{ job.heartbeat.failure_url | default('') }}"
+  ping_url "{{ job.heartbeat.failure_url | default('') }}" "failure"
   exit 1
 fi

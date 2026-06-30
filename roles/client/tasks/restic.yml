@@ -101,8 +101,13 @@
   changed_when: "'created restic repository' in (stdout | default(''))"
 
 - name: Run initial backup
-  ansible.builtin.command:
-    cmd: "{{ offsitebuddy_client_root }}/{{ job.name }}/backup.sh"
+  vars:
+    job_dir: "{{ offsitebuddy_client_root }}/{{ job.name }}"
+    marker_file: "{{ job_dir }}/.initial-backup-complete"
+  ansible.builtin.shell:
+    cmd: >-
+      {{ job_dir }}/backup.sh && touch {{ marker_file }}
+    creates: "{{ marker_file }}"
   loop: "{{ offsitebuddy_client_jobs }}"
   loop_control:
     loop_var: job
