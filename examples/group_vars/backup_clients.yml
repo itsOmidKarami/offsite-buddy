@@ -1,0 +1,29 @@
+---
+offsitebuddy_restic_image: restic/restic:0.19.0
+
+offsitebuddy_client_jobs:
+  - name: photos_to_bob
+    repository: "rest:http://alice:{{ vault_rest_server_password_alice }}\
+      @offsitebuddy-alice:8000/"
+    password: "{{ vault_restic_repo_password }}"
+    init_if_missing: true
+    run_initial_backup: true
+    schedule: "03:30"
+    backup_paths:
+      - /data/photos
+      - /data/documents
+    excludes:
+      - /data/**/.cache
+      - /data/downloads/tmp
+    retention:
+      keep_daily: 7
+      keep_weekly: 4
+      keep_monthly: 12
+    check:
+      enabled: true
+      schedule: weekly
+      read_data: false
+    heartbeat:
+      start_url: "{{ vault_uptime_kuma_start_url | default('') }}"
+      success_url: "{{ vault_uptime_kuma_success_url }}"
+      failure_url: "{{ vault_uptime_kuma_failure_url }}"
