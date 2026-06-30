@@ -1,3 +1,6 @@
 ---
 - name: Validate OffsiteBuddy server configuration
   ansible.builtin.import_tasks: validate.yml
+
+- name: Validate OffsiteBuddy quota paths
+  ansible.builtin.import_tasks: quota.yml

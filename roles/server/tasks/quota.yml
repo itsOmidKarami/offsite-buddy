@@ -1,0 +1,7 @@
+---
+- name: Validate configured quota paths
+  ansible.builtin.include_role:
+    name: offsitebuddy.backup.quota
+  vars:
+    offsitebuddy_quota_items: >-
+      {{ offsitebuddy_friends | map(attribute='quota') | list }}

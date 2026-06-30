@@ -13,8 +13,14 @@
         path: /etc/offsitebuddy/jobs/photos_to_bob/backup.sh
       register: client_backup_script
 
-    - name: Assert expected files exist
+    - name: Check quota path exists
+      ansible.builtin.stat:
+        path: /tmp/offsitebuddy-alice
+      register: quota_path
+
+    - name: Assert expected files and paths exist
       ansible.builtin.assert:
         that:
+          - quota_path.stat.isdir
           - server_compose.stat.exists
           - client_backup_script.stat.exists
