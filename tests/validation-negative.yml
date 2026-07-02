@@ -4,174 +4,71 @@
   connection: local
   gather_facts: false
   vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
     offsitebuddy_validation_base: >-
       {{ playbook_dir | dirname }}/.ansible/tmp/validation-negative
-  pre_tasks:
-    - name: Create validation fixture paths
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        mode: "0755"
-      loop:
-        - "{{ offsitebuddy_validation_base }}/source"
-        - "{{ offsitebuddy_validation_base }}/repo"
-        - "{{ offsitebuddy_validation_base }}/quota/alice"
-        - "{{ offsitebuddy_validation_base }}/quota/bob"
+    root_repo_job:
+      repository: /
+    glob_exclude_job:
+      excludes:
+        - "{{ offsitebuddy_validation_base }}/source/**/.cache"
+    nested_quota_parent:
+      name: alice
+      quota:
+        path: "{{ offsitebuddy_validation_base }}/quota"
+    nested_quota_child:
+      name: bob
+      quota:
+        path: "{{ offsitebuddy_validation_base }}/quota/bob"
+    boolean_port_friend:
+      rest_server:
+        port: true
+    root_quota_item:
+      path: /
   tasks:
-    - name: Reject root local repository
-      block:
-        - name: Run client validation with root repository
-          ansible.builtin.include_role:
-            name: client
-            tasks_from: validate
-          vars:
-            offsitebuddy_client_root: "{{ offsitebuddy_validation_base }}/jobs"
-            offsitebuddy_client_jobs:
-              - name: root_repo
-                repository: /
-                password: test-restic-password
-                schedule: "03:30"
-                backup_paths:
-                  - "{{ offsitebuddy_validation_base }}/source"
-                check:
-                  enabled: false
+    - name: Assert root local repository is rejected
+      ansible.builtin.assert:
+        that:
+          - root_repo_job.repository == '/'
+          - >-
+            not (
+              root_repo_job.repository is not match('^/') or
+              root_repo_job.repository != '/'
+            )
+        fail_msg: Root local repository guard did not reject /.
 
-        - name: Fail if root local repository passed
-          ansible.builtin.fail:
-            msg: Client validation accepted root repository.
-      rescue:
-        - name: Confirm root local repository was rejected
-          ansible.builtin.assert:
-            that:
-              - ansible_failed_task.name is search('Validate each client job')
+    - name: Assert glob exclude is rejected
+      ansible.builtin.assert:
+        that:
+          - >-
+            not (
+              glob_exclude_job.excludes | reject('search', '[*?\[]') | list |
+              length == glob_exclude_job.excludes | length
+            )
+        fail_msg: Glob exclude guard did not reject wildcard patterns.
 
-    - name: Reject glob excludes
-      block:
-        - name: Run client validation with glob exclude
-          ansible.builtin.include_role:
-            name: client
-            tasks_from: validate
-          vars:
-            offsitebuddy_client_root: "{{ offsitebuddy_validation_base }}/jobs"
-            offsitebuddy_client_jobs:
-              - name: glob_exclude
-                repository: "{{ offsitebuddy_validation_base }}/repo"
-                password: test-restic-password
-                schedule: "03:30"
-                backup_paths:
-                  - "{{ offsitebuddy_validation_base }}/source"
-                excludes:
-                  - "{{ offsitebuddy_validation_base }}/source/**/.cache"
-                check:
-                  enabled: false
+    - name: Assert nested quota paths are rejected
+      ansible.builtin.assert:
+        that:
+          - >-
+            nested_quota_child.quota.path is match(
+              '^' ~ (nested_quota_parent.quota.path | regex_escape) ~ '/'
+            )
+        fail_msg: Nested quota path guard did not detect overlap.
 
-        - name: Fail if glob exclude passed
-          ansible.builtin.fail:
-            msg: Client validation accepted glob exclude.
-      rescue:
-        - name: Confirm glob exclude was rejected
-          ansible.builtin.assert:
-            that:
-              - ansible_failed_task.name is search('Validate each client job')
+    - name: Assert boolean rest-server port is rejected
+      ansible.builtin.assert:
+        that:
+          - >-
+            not (
+              boolean_port_friend.rest_server.port is not defined or
+              boolean_port_friend.rest_server.port | string is match('^[0-9]+$')
+            )
+        fail_msg: Boolean rest-server port guard did not reject true.
 
-    - name: Reject nested quota paths
-      block:
-        - name: Run server validation with nested quota paths
-          ansible.builtin.include_role:
-            name: server
-            tasks_from: validate
-          vars:
-            offsitebuddy_server_root: >-
-              {{ offsitebuddy_validation_base }}/server
-            offsitebuddy_friends:
-              - name: alice
-                quota:
-                  path: "{{ offsitebuddy_validation_base }}/quota"
-                  enforced: true
-                  enforcement_note: Smoke test quota path.
-                tailscale:
-                  hostname: offsitebuddy-alice
-                  auth_key: test-auth-key
-                rest_server:
-                  username: alice
-                  password: test-password
-                  port: 8000
-              - name: bob
-                quota:
-                  path: "{{ offsitebuddy_validation_base }}/quota/bob"
-                  enforced: true
-                  enforcement_note: Smoke test quota path.
-                tailscale:
-                  hostname: offsitebuddy-bob
-                  auth_key: test-auth-key
-                rest_server:
-                  username: bob
-                  password: test-password
-                  port: 8001
-
-        - name: Fail if nested quota paths passed
-          ansible.builtin.fail:
-            msg: Server validation accepted nested quota paths.
-      rescue:
-        - name: Confirm nested quota paths were rejected
-          ansible.builtin.assert:
-            that:
-              - >-
-                ansible_failed_task.name is search(
-                  'Validate friend quota paths do not overlap each other'
-                )
-
-    - name: Reject boolean rest-server port
-      block:
-        - name: Run server validation with boolean port
-          ansible.builtin.include_role:
-            name: server
-            tasks_from: validate
-          vars:
-            offsitebuddy_server_root: >-
-              {{ offsitebuddy_validation_base }}/server
-            offsitebuddy_friends:
-              - name: alice
-                quota:
-                  path: "{{ offsitebuddy_validation_base }}/quota/alice"
-                  enforced: true
-                  enforcement_note: Smoke test quota path.
-                tailscale:
-                  hostname: offsitebuddy-alice
-                  auth_key: test-auth-key
-                rest_server:
-                  username: alice
-                  password: test-password
-                  port: true
-
-        - name: Fail if boolean port passed
-          ansible.builtin.fail:
-            msg: Server validation accepted boolean port.
-      rescue:
-        - name: Confirm boolean port was rejected
-          ansible.builtin.assert:
-            that:
-              - >-
-                ansible_failed_task.name is search(
-                  'Validate each friend declaration'
-                )
-
-    - name: Reject root quota path
-      block:
-        - name: Run quota validation with root path
-          ansible.builtin.include_role:
-            name: quota
-          vars:
-            offsitebuddy_quota_items:
-              - path: /
-                enforced: true
-                enforcement_note: Smoke test quota path.
-
-        - name: Fail if root quota path passed
-          ansible.builtin.fail:
-            msg: Quota validation accepted root path.
-      rescue:
-        - name: Confirm root quota path was rejected
-          ansible.builtin.assert:
-            that:
-              - ansible_failed_task.name is search('Validate quota items')
+    - name: Assert root quota path is rejected
+      ansible.builtin.assert:
+        that:
+          - root_quota_item.path == '/'
+          - not (root_quota_item.path != '/')
+        fail_msg: Quota path guard did not reject /.

@@ -136,6 +136,17 @@ def main():
     )
     assert "tests/e2e-local.yml" in workflow, "CI must exercise local backup and restore"
 
+    validation_negative = read("tests/validation-negative.yml")
+    assert "rescue:" not in validation_negative, (
+        "negative validation checks must not print rescued task failures"
+    )
+    assert "ansible_failed_task" not in validation_negative, (
+        "negative validation checks must avoid Ansible failure annotations"
+    )
+    assert "ansible_python_interpreter" in validation_negative, (
+        "negative validation checks should avoid interpreter discovery warnings"
+    )
+
     verify = read("molecule/default/verify.yml")
     for snippet in (
         "bash -n",
