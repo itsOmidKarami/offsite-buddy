@@ -1,0 +1,111 @@
+---
+name: Release
+
+"on":
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+jobs:
+  galaxy:
+    name: Publish Ansible Galaxy collection
+    runs-on: ubuntu-latest
+    if: startsWith(github.event.release.tag_name, 'v')
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Verify release target
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Release tag must point to a commit on origin/main"
+            exit 1
+          fi
+
+      - name: Verify release version
+        id: version
+        run: |
+          tag="${{ github.event.release.tag_name }}"
+          version="$(awk '/^version:/ { print $2; exit }' galaxy.yml)"
+          project_version="$(
+            awk -F'"' '/^version =/ { print $2; exit }' pyproject.toml
+          )"
+
+          if [ -z "$version" ]; then
+            echo "::error::Could not read version from galaxy.yml"
+            exit 1
+          fi
+
+          if [ "$tag" != "v$version" ]; then
+            echo "::error::Release tag $tag does not match galaxy.yml"
+            echo "::error::version $version"
+            exit 1
+          fi
+
+          if [ "$project_version" != "$version" ]; then
+            echo "::error::pyproject.toml version $project_version"
+            echo "::error::does not match galaxy.yml version $version"
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          artifact="offsitebuddy-backup-$version.tar.gz"
+          echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
+
+      - name: Install tools
+        run: |
+          python -m pip install --upgrade pip uv
+          uv sync --locked --group dev
+
+      - name: Build collection
+        run: |
+          artifact="${{ steps.version.outputs.artifact }}"
+          uv run ansible-galaxy collection build --force
+          test -f "$artifact"
+
+      - name: Upload release artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "${{ github.event.release.tag_name }}"
+          "${{ steps.version.outputs.artifact }}"
+          --repo "$GITHUB_REPOSITORY"
+          --clobber
+
+      - name: Check Galaxy token
+        env:
+          ANSIBLE_GALAXY_API_TOKEN: ${{ secrets.ANSIBLE_GALAXY_API_TOKEN }}
+        run: |
+          if [ -z "$ANSIBLE_GALAXY_API_TOKEN" ]; then
+            echo "::error::Set the ANSIBLE_GALAXY_API_TOKEN repository secret"
+            exit 1
+          fi
+
+      - name: Publish to Ansible Galaxy
+        env:
+          ANSIBLE_GALAXY_API_TOKEN: ${{ secrets.ANSIBLE_GALAXY_API_TOKEN }}
+        run: |
+          artifact="${{ steps.version.outputs.artifact }}"
+          config="$RUNNER_TEMP/ansible-galaxy.cfg"
+
+          {
+            printf '[galaxy]\n'
+            printf 'server_list = galaxy\n'
+            printf '[galaxy_server.galaxy]\n'
+            printf 'url=https://galaxy.ansible.com/\n'
+            printf 'token=%s\n' "$ANSIBLE_GALAXY_API_TOKEN"
+          } > "$config"
+          chmod 600 "$config"
+
+          ANSIBLE_CONFIG="$config" uv run ansible-galaxy collection publish \
+            "$artifact" \
+            --import-timeout 600
