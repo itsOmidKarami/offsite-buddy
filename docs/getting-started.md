@@ -1,6 +1,6 @@
 # Getting Started
 
-1. Install the collection with `ansible-galaxy collection install offsitebuddy.backup`, or run from a source checkout with this repository as the working directory.
+1. Install the collection with `ansible-galaxy collection install itsomidkarami.backup`, or run from a source checkout with this repository as the working directory.
 2. Use Debian-family or UGOS hosts with Docker Compose and systemd.
 3. Tailscale must be running on the client host so restic containers can reach the friend-specific Tailscale hostname.
 4. Create a quota-managed storage path for each friend.
