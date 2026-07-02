@@ -131,6 +131,14 @@ def main():
     assert expected_trigger in workflow, (
         "CI should run on PRs and only on pushes to main"
     )
+    assert "actions/checkout@v7" in workflow, (
+        "CI checkout action should use a Node 24 runtime"
+    )
+    assert "actions/setup-python@v6" in workflow, (
+        "CI setup-python action should use a Node 24 runtime"
+    )
+    assert "actions/checkout@v4" not in workflow
+    assert "actions/setup-python@v5" not in workflow
     assert "tests/validation-negative.yml" in workflow, (
         "CI must reject unsafe validation inputs"
     )
