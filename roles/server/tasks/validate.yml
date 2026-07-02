@@ -40,3 +40,12 @@
   loop_control:
     label: "{{ item.name | default('missing-name') }}"
   no_log: true
+
+- name: Validate friend names are unique
+  ansible.builtin.assert:
+    that:
+      - >-
+        offsitebuddy_friends | map(attribute='name') | list | unique
+        | length == offsitebuddy_friends | length
+    fail_msg: >-
+      offsitebuddy_friends names must be unique.

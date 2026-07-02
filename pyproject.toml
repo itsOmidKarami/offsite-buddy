@@ -1,0 +1,18 @@
+[project]
+name = "offsitebuddy-dev"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "ansible-core",
+  "ansible-lint",
+  "molecule",
+  "molecule-plugins[docker]",
+  "pre-commit",
+  "yamllint",
+]
+
+[tool.uv]
+package = false

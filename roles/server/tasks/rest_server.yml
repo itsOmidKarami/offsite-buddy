@@ -39,6 +39,11 @@
   no_log: true
   register: rest_server_env_render
 
+- name: Ensure passlib is installed for htpasswd
+  ansible.builtin.package:
+    name: python3-passlib
+    state: present
+
 - name: Write per-friend htpasswd file
   community.general.htpasswd:
     path: "{{ offsitebuddy_server_root }}/friends/{{ friend.name }}/htpasswd"

@@ -112,6 +112,14 @@
             server_yaml.services.tailscale.image ==
             'tailscale/tailscale:stable'
           - >-
+            server_yaml.services.tailscale.environment.TS_USERSPACE ==
+            'false'
+          - >-
+            server_yaml.services.tailscale.devices ==
+            ['/dev/net/tun:/dev/net/tun']
+          - >-
+            'NET_RAW' in server_yaml.services.tailscale.cap_add
+          - >-
             server_yaml.services['rest-server'].environment.OPTIONS
             is search('--append-only')
           - >-
