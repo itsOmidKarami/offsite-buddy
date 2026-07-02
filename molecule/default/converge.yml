@@ -7,9 +7,7 @@
     offsitebuddy_friends:
       - name: alice
         quota:
-          backend: existing_path
           path: /tmp/offsitebuddy-alice
-          size: 2T
           enforced: true
           enforcement_note: "Test path acts as quota-managed storage."
         tailscale:
@@ -31,10 +29,6 @@
           - /tmp/offsitebuddy-source
         excludes:
           - /tmp/offsitebuddy-source/.cache
-        retention:
-          keep_daily: 7
-          keep_weekly: 4
-          keep_monthly: 12
         heartbeat:
           start_url: ""
           success_url: ""

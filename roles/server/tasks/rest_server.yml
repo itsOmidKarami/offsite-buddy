@@ -40,9 +40,11 @@
   register: rest_server_env_render
 
 - name: Ensure passlib is installed for htpasswd
-  ansible.builtin.package:
+  ansible.builtin.apt:
     name: python3-passlib
     state: present
+    update_cache: true
+    cache_valid_time: 3600
 
 - name: Write per-friend htpasswd file
   community.general.htpasswd:

@@ -2,13 +2,11 @@
 
 For v0.1, use UGOS to create a shared folder with a quota for each friend.
 
-Then configure that path as `existing_path`:
+Then configure that path:
 
 ```yaml
 quota:
-  backend: existing_path
   path: /mnt/ugos-shares/alice-offsite-backup
-  size: 2T
   enforced: true
   enforcement_note: "UGOS shared folder quota set to 2 TB."
 ```

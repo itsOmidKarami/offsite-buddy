@@ -1,12 +1,54 @@
 ---
-- name: Validate existing_path quota items
-  ansible.builtin.include_tasks: existing_path.yml
+- name: Validate quota items
+  ansible.builtin.assert:
+    that:
+      - item.path is defined
+      - item.enforced | default(false) | bool
+      - item.enforcement_note is defined
+    fail_msg: >-
+      Quota requires path, enforced=true, and enforcement_note.
   loop: "{{ offsitebuddy_quota_items }}"
   loop_control:
-    loop_var: offsitebuddy_quota_item
     label: >-
       {{
-        offsitebuddy_quota_item.name
-        | default(offsitebuddy_quota_item.path)
+        item.name
+        | default(item.path)
         | default('quota-item')
       }}
+
+- name: Stat quota paths
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  loop: "{{ offsitebuddy_quota_items }}"
+  loop_control:
+    label: "{{ item.name | default(item.path) }}"
+  register: offsitebuddy_quota_path_stats
+
+- name: Assert quota paths exist and are directories
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isdir
+    fail_msg: >-
+      Quota path {{ item.item.path }} must already exist and be a directory.
+  loop: "{{ offsitebuddy_quota_path_stats.results }}"
+  loop_control:
+    label: "{{ item.item.name | default(item.item.path) }}"
+
+- name: Probe quota path writability
+  ansible.builtin.tempfile:
+    state: file
+    path: "{{ item.path }}"
+    prefix: .offsitebuddy-write-probe-
+  loop: "{{ offsitebuddy_quota_items }}"
+  loop_control:
+    label: "{{ item.name | default(item.path) }}"
+  register: offsitebuddy_quota_write_probes
+
+- name: Remove quota write probes
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ offsitebuddy_quota_write_probes.results }}"
+  loop_control:
+    label: "{{ item.item.name | default(item.item.path) }}"

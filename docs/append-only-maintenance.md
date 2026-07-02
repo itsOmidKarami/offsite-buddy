@@ -2,13 +2,12 @@
 
 v0.1 keeps rest-server append-only by default.
 
-Retention is metadata only in v0.1. OffsiteBuddy does not enforce retention
-automatically while rest-server stays append-only; use the configured retention
-values as the target for manual maintenance.
+OffsiteBuddy does not enforce retention automatically while rest-server stays
+append-only. Choose the retention target during manual maintenance.
 
 Do not schedule automatic destructive prune. Use an admin maintenance window:
 
-1. Confirm the client retention intent.
+1. Confirm the retention intent.
 2. Stop the friend stack.
 3. Start a temporary non-append-only maintenance endpoint or run restic against the repository from a controlled admin environment.
 4. Run `restic forget --prune`.

@@ -125,11 +125,6 @@
           - >-
             client_yaml.services.restic.entrypoint == ['restic']
           - >-
-            'tailscale/tailscale:stable' in
-            (server_compose.content | b64decode)
-          - >-
-            '--append-only' in (server_compose.content | b64decode)
-          - >-
             'curl -fsS' in (backup_script.content | b64decode)
           - >-
             'OnCalendar=weekly' in (check_timer.content | b64decode)

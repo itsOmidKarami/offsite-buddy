@@ -15,10 +15,6 @@ offsitebuddy_client_jobs:
     excludes:
       - /data/**/.cache
       - /data/downloads/tmp
-    retention:
-      keep_daily: 7
-      keep_weekly: 4
-      keep_monthly: 12
     check:
       enabled: true
       schedule: weekly

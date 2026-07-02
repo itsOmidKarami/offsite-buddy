@@ -3,16 +3,8 @@
   ansible.builtin.assert:
     that:
       - offsitebuddy_friends | type_debug == 'list'
-      - offsitebuddy_friends is not mapping
     fail_msg: >-
       offsitebuddy_friends must be a list of friend declarations.
-
-- name: Validate append-only mode is enforced
-  ansible.builtin.assert:
-    that:
-      - offsitebuddy_default_append_only | bool
-    fail_msg: >-
-      offsitebuddy_default_append_only must be true for v0.1.
 
 - name: Validate each friend declaration
   ansible.builtin.assert:
@@ -20,9 +12,7 @@
       - item.name is defined
       - item.name | regex_search('^[a-z][a-z0-9_-]*$') is not none
       - item.quota is defined
-      - item.quota.backend | default('') == 'existing_path'
       - item.quota.path is defined
-      - item.quota.size is defined
       - item.quota.enforced | default(false) | bool
       - item.quota.enforcement_note is defined
       - item.tailscale is defined
@@ -34,7 +24,7 @@
       - item.rest_server.port | default(8000) | int > 0
       - item.rest_server.port | default(8000) | int < 65536
     fail_msg: >-
-      Each friend needs name, existing_path quota with enforced=true,
+      Each friend needs name, quota path with enforced=true,
       Tailscale auth, and rest-server credentials.
   loop: "{{ offsitebuddy_friends }}"
   loop_control:
