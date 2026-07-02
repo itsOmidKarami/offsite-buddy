@@ -5,10 +5,24 @@ services:
     env_file:
       - .env
     volumes:
-      - ./password:/run/secrets/restic-password:ro
-      - ./excludes:/etc/offsitebuddy/excludes:ro
+      - type: bind
+        source: ./password
+        target: /run/secrets/restic-password
+        read_only: true
+      - type: bind
+        source: ./excludes
+        target: /etc/offsitebuddy/excludes
+        read_only: true
 {% for path in job.backup_paths %}
-      - "{{ path }}:{{ path }}:ro"
+      - type: bind
+        source: "{{ path }}"
+        target: "{{ path }}"
+        read_only: true
 {% endfor %}
+{% if job.repository is match('^/') %}
+      - type: bind
+        source: "{{ job.repository }}"
+        target: "{{ job.repository }}"
+{% endif %}
     entrypoint:
       - restic

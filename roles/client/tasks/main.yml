@@ -10,3 +10,4 @@
 
 - name: Install systemd timers
   ansible.builtin.import_tasks: systemd.yml
+  when: offsitebuddy_manage_systemd | bool

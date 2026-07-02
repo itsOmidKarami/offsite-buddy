@@ -12,6 +12,8 @@
       - item.name is defined
       - item.name | regex_search('^[a-z][a-z0-9_-]*$') is not none
       - item.repository is defined
+      - item.repository is string
+      - item.repository | regex_search('\s') is none
       - item.password is defined
       - item.schedule is defined
       - >-
@@ -26,7 +28,8 @@
       - item.check is not defined or item.check is mapping
     fail_msg: >-
       Each client job needs name, repository, password, HH:MM schedule,
-      absolute backup_paths, and an optional check mapping.
+      absolute backup_paths, and an optional check mapping. REST URLs with
+      embedded credentials must already be url-encoded.
   loop: "{{ offsitebuddy_client_jobs }}"
   loop_control:
     label: "{{ item.name | default('missing-name') }}"

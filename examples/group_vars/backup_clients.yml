@@ -3,6 +3,7 @@ offsitebuddy_restic_image: restic/restic:0.19.0
 
 offsitebuddy_client_jobs:
   - name: photos_to_bob
+    # Credentials embedded in REST URLs must be URL-encoded.
     repository: "rest:http://alice:{{ vault_rest_server_password_alice }}\
       @offsitebuddy-alice:8000/"
     password: "{{ vault_restic_repo_password }}"

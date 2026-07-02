@@ -28,6 +28,11 @@ services:
         --append-only
         --listen :{{ friend.rest_server.port | default(8000) }}
     volumes:
-      - "{{ friend.quota.path }}:/data:rw"
-      - ./htpasswd:/run/secrets/htpasswd:ro
+      - type: bind
+        source: "{{ friend.quota.path }}"
+        target: /data
+      - type: bind
+        source: ./htpasswd
+        target: /run/secrets/htpasswd
+        read_only: true
     restart: unless-stopped

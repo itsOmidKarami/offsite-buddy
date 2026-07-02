@@ -1,0 +1,92 @@
+---
+- name: Exercise local restic backup and restore
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    offsitebuddy_e2e_base: >-
+      {{ playbook_dir | dirname }}/.ansible/tmp/e2e-local
+    offsitebuddy_e2e_source: "{{ offsitebuddy_e2e_base }}/source"
+    offsitebuddy_e2e_repo: "{{ offsitebuddy_e2e_base }}/repo"
+    offsitebuddy_e2e_restore: "{{ offsitebuddy_e2e_base }}/restore"
+    offsitebuddy_e2e_job_root: "{{ offsitebuddy_e2e_base }}/jobs/local_smoke"
+    offsitebuddy_client_root: "{{ offsitebuddy_e2e_base }}/jobs"
+    offsitebuddy_client_owner: "{{ lookup('pipe', 'id -un') }}"
+    offsitebuddy_client_group: "{{ lookup('pipe', 'id -gn') }}"
+    offsitebuddy_start_services: true
+    offsitebuddy_manage_systemd: false
+    offsitebuddy_client_jobs:
+      - name: local_smoke
+        repository: "{{ offsitebuddy_e2e_repo }}"
+        password: test-restic-password
+        init_if_missing: true
+        run_initial_backup: true
+        schedule: "03:30"
+        backup_paths:
+          - "{{ offsitebuddy_e2e_source }}"
+        check:
+          enabled: false
+  pre_tasks:
+    - name: Detect local e2e host OS
+      ansible.builtin.command:
+        cmd: uname -s
+      register: offsitebuddy_e2e_uname
+      changed_when: false
+
+    - name: Skip Docker Desktop macOS bind-mount restic smoke
+      ansible.builtin.meta: end_play
+      when: offsitebuddy_e2e_uname.stdout == 'Darwin'
+
+    - name: Reset e2e workspace
+      ansible.builtin.file:
+        path: "{{ offsitebuddy_e2e_base }}"
+        state: absent
+
+    - name: Create e2e directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ offsitebuddy_e2e_source }}"
+        - "{{ offsitebuddy_e2e_repo }}"
+        - "{{ offsitebuddy_e2e_restore }}"
+
+    - name: Write e2e proof file
+      ansible.builtin.copy:
+        content: "offsitebuddy e2e proof\n"
+        dest: "{{ offsitebuddy_e2e_source }}/proof.txt"
+        mode: "0644"
+  roles:
+    - role: client
+  post_tasks:
+    - name: List snapshots
+      ansible.builtin.command:
+        cmd: "{{ offsitebuddy_e2e_job_root }}/snapshots.sh"
+      changed_when: false
+
+    - name: Check repository
+      ansible.builtin.command:
+        cmd: "{{ offsitebuddy_e2e_job_root }}/check.sh"
+      changed_when: false
+
+    - name: Restore latest snapshot
+      ansible.builtin.command:
+        argv:
+          - "{{ offsitebuddy_e2e_job_root }}/restore-latest.sh"
+          - "{{ offsitebuddy_e2e_restore }}"
+      changed_when: false
+
+    - name: Read restored proof file
+      ansible.builtin.slurp:
+        path: >-
+          {{ offsitebuddy_e2e_restore }}{{ offsitebuddy_e2e_source }}/proof.txt
+      register: offsitebuddy_e2e_restored_proof
+
+    - name: Assert restored proof file content
+      ansible.builtin.assert:
+        that:
+          - >-
+            offsitebuddy_e2e_restored_proof.content | b64decode ==
+            'offsitebuddy e2e proof\n'

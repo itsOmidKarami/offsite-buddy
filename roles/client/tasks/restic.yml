@@ -3,8 +3,8 @@
   ansible.builtin.file:
     path: "{{ offsitebuddy_client_root }}/{{ job.name }}"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ offsitebuddy_client_owner }}"
+    group: "{{ offsitebuddy_client_group }}"
     mode: "0755"
   loop: "{{ offsitebuddy_client_jobs }}"
   loop_control:
@@ -15,8 +15,8 @@
   ansible.builtin.template:
     src: env.j2
     dest: "{{ offsitebuddy_client_root }}/{{ job.name }}/.env"
-    owner: root
-    group: root
+    owner: "{{ offsitebuddy_client_owner }}"
+    group: "{{ offsitebuddy_client_group }}"
     mode: "0600"
   loop: "{{ offsitebuddy_client_jobs }}"
   loop_control:
@@ -24,12 +24,24 @@
     label: "{{ job.name }}"
   no_log: true
 
+- name: Mark managed client job directories
+  ansible.builtin.copy:
+    content: "offsitebuddy\n"
+    dest: "{{ offsitebuddy_client_root }}/{{ job.name }}/.offsitebuddy-managed"
+    owner: "{{ offsitebuddy_client_owner }}"
+    group: "{{ offsitebuddy_client_group }}"
+    mode: "0644"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+
 - name: Write restic password files
   ansible.builtin.copy:
     content: "{{ job.password }}\n"
     dest: "{{ offsitebuddy_client_root }}/{{ job.name }}/password"
-    owner: root
-    group: root
+    owner: "{{ offsitebuddy_client_owner }}"
+    group: "{{ offsitebuddy_client_group }}"
     mode: "0600"
   loop: "{{ offsitebuddy_client_jobs }}"
   loop_control:
@@ -41,8 +53,8 @@
   ansible.builtin.template:
     src: excludes.j2
     dest: "{{ offsitebuddy_client_root }}/{{ job.name }}/excludes"
-    owner: root
-    group: root
+    owner: "{{ offsitebuddy_client_owner }}"
+    group: "{{ offsitebuddy_client_group }}"
     mode: "0644"
   loop: "{{ offsitebuddy_client_jobs }}"
   loop_control:
@@ -53,8 +65,8 @@
   ansible.builtin.template:
     src: compose.yaml.j2
     dest: "{{ offsitebuddy_client_root }}/{{ job.name }}/compose.yaml"
-    owner: root
-    group: root
+    owner: "{{ offsitebuddy_client_owner }}"
+    group: "{{ offsitebuddy_client_group }}"
     mode: "0644"
   loop: "{{ offsitebuddy_client_jobs }}"
   loop_control:
@@ -65,8 +77,8 @@
   ansible.builtin.template:
     src: "{{ helper }}.j2"
     dest: "{{ offsitebuddy_client_root }}/{{ job.name }}/{{ helper }}"
-    owner: root
-    group: root
+    owner: "{{ offsitebuddy_client_owner }}"
+    group: "{{ offsitebuddy_client_group }}"
     mode: "0750"
   loop: >-
     {{
@@ -98,7 +110,10 @@
   when:
     - offsitebuddy_start_services | bool
     - job.init_if_missing | default(true) | bool
-  changed_when: "'created restic repository' in (stdout | default(''))"
+  register: restic_init_result
+  changed_when: >-
+    'created restic repository' in
+    (restic_init_result.stdout | default(''))
 
 - name: Run initial backup
   vars:
@@ -106,7 +121,7 @@
     marker_file: "{{ job_dir }}/.initial-backup-complete"
   ansible.builtin.shell:
     cmd: >-
-      {{ job_dir }}/backup.sh && touch {{ marker_file }}
+      {{ (job_dir + '/backup.sh') | quote }} && touch {{ marker_file | quote }}
     creates: "{{ marker_file }}"
   loop: "{{ offsitebuddy_client_jobs }}"
   loop_control:
