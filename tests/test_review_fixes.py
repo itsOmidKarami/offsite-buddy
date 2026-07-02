@@ -45,6 +45,9 @@ def main():
         "offsitebuddy_client_repo_source_overlaps",
         "offsitebuddy_client_exclude_source_overlaps",
         "item.excludes | type_debug == 'list'",
+        "'..' not in item.repository.split('/')",
+        "item.backup_paths | reject('search', '(^|/)\\.\\.(/|$)')",
+        "item.excludes | reject('search', '(^|/)\\.\\.(/|$)')",
     ):
         assert snippet in validate, "missing client validation: %s" % snippet
 
@@ -71,10 +74,16 @@ def main():
     assert "item.quota.path | regex_search('^/')" in server_validate, (
         "server quota paths must be absolute"
     )
+    assert "'..' not in item.quota.path.split('/')" in server_validate, (
+        "server quota paths must reject traversal segments"
+    )
 
     quota_validate = read("roles/quota/tasks/main.yml")
     assert "item.path | regex_search('^/')" in quota_validate, (
         "quota role paths must be absolute"
+    )
+    assert "'..' not in item.path.split('/')" in quota_validate, (
+        "quota role paths must reject traversal segments"
     )
 
     getting_started = read("docs/getting-started.md").lower()

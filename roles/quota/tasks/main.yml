@@ -5,10 +5,12 @@
       - item.path is defined
       - item.path is string
       - item.path | regex_search('^/') is not none
+      - "'..' not in item.path.split('/')"
       - item.enforced | default(false) | bool
       - item.enforcement_note is defined
     fail_msg: >-
-      Quota requires absolute path, enforced=true, and enforcement_note.
+      Quota requires absolute path without traversal segments, enforced=true,
+      and enforcement_note.
   loop: "{{ offsitebuddy_quota_items }}"
   loop_control:
     label: >-
