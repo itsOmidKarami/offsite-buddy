@@ -24,6 +24,10 @@ def main():
         "select('match', '^/')",
         "map(attribute='name')",
         "unique",
+        "offsitebuddy_client_backup_path_stats",
+        "item.stat.exists",
+        "item.stat.isdir",
+        "systemd-analyze calendar",
     ):
         assert snippet in validate, "missing client validation: %s" % snippet
 
@@ -41,6 +45,14 @@ def main():
 
     server_validate = read("roles/server/tasks/validate.yml")
     assert "offsitebuddy_friends | map(attribute='name')" in server_validate, "server friend names must be unique"
+    assert "map(attribute='quota.path')" in server_validate, "server quota paths must be unique"
+    assert "map(attribute='tailscale.hostname')" in server_validate, "server hostnames must be unique"
+
+    getting_started = read("docs/getting-started.md").lower()
+    assert "tailscale must be running on the client host" in getting_started, (
+        "client Tailscale prerequisite must be explicit"
+    )
+    assert "debian-family" in getting_started, "supported OS family must be explicit"
 
     verify = read("molecule/default/verify.yml")
     for snippet in (

@@ -39,3 +39,21 @@
         | length == offsitebuddy_friends | length
     fail_msg: >-
       offsitebuddy_friends names must be unique.
+
+- name: Validate friend quota paths are unique
+  ansible.builtin.assert:
+    that:
+      - >-
+        offsitebuddy_friends | map(attribute='quota.path') | list | unique
+        | length == offsitebuddy_friends | length
+    fail_msg: >-
+      offsitebuddy_friends quota paths must be unique.
+
+- name: Validate friend Tailscale hostnames are unique
+  ansible.builtin.assert:
+    that:
+      - >-
+        offsitebuddy_friends | map(attribute='tailscale.hostname') | list
+        | unique | length == offsitebuddy_friends | length
+    fail_msg: >-
+      offsitebuddy_friends Tailscale hostnames must be unique.
