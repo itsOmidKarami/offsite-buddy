@@ -13,6 +13,8 @@
       - item.name | regex_search('^[a-z][a-z0-9_-]*$') is not none
       - item.quota is defined
       - item.quota.path is defined
+      - item.quota.path is string
+      - item.quota.path | regex_search('^/') is not none
       - item.quota.enforced | default(false) | bool
       - item.quota.enforcement_note is defined
       - item.tailscale is defined
@@ -24,7 +26,7 @@
       - item.rest_server.port | default(8000) | int > 0
       - item.rest_server.port | default(8000) | int < 65536
     fail_msg: >-
-      Each friend needs name, quota path with enforced=true,
+      Each friend needs name, absolute quota path with enforced=true,
       Tailscale auth, and rest-server credentials.
   loop: "{{ offsitebuddy_friends }}"
   loop_control:

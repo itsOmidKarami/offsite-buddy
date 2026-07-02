@@ -3,10 +3,12 @@
   ansible.builtin.assert:
     that:
       - item.path is defined
+      - item.path is string
+      - item.path | regex_search('^/') is not none
       - item.enforced | default(false) | bool
       - item.enforcement_note is defined
     fail_msg: >-
-      Quota requires path, enforced=true, and enforcement_note.
+      Quota requires absolute path, enforced=true, and enforcement_note.
   loop: "{{ offsitebuddy_quota_items }}"
   loop_control:
     label: >-

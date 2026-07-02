@@ -26,6 +26,11 @@ build_ignore:
   - .gitignore
   - .github
   - .ansible
+  - .uv-cache
+  - .venv
+  - "*.tar.gz"
+  - .DS_Store
+  - "**/.DS_Store"
   - collections
   - molecule
   - docs/superpowers

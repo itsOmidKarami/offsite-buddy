@@ -27,6 +27,7 @@ def main():
             % (field, field)
         )
         assert expected in backup, "heartbeat %s URL must be shell-quoted" % field
+    assert "redacted" in backup, "heartbeat failure logs must not expose URLs"
 
     validate = read("roles/client/tasks/validate.yml")
     for snippet in (
@@ -40,6 +41,10 @@ def main():
         "item.stat.isdir",
         "systemd-analyze calendar",
         "url-encoded",
+        "offsitebuddy_client_supported_repository_schemes",
+        "offsitebuddy_client_repo_source_overlaps",
+        "offsitebuddy_client_exclude_source_overlaps",
+        "item.excludes | type_debug == 'list'",
     ):
         assert snippet in validate, "missing client validation: %s" % snippet
 
@@ -63,6 +68,14 @@ def main():
     assert "offsitebuddy_friends | map(attribute='name')" in server_validate, "server friend names must be unique"
     assert "map(attribute='quota.path')" in server_validate, "server quota paths must be unique"
     assert "map(attribute='tailscale.hostname')" in server_validate, "server hostnames must be unique"
+    assert "item.quota.path | regex_search('^/')" in server_validate, (
+        "server quota paths must be absolute"
+    )
+
+    quota_validate = read("roles/quota/tasks/main.yml")
+    assert "item.path | regex_search('^/')" in quota_validate, (
+        "quota role paths must be absolute"
+    )
 
     getting_started = read("docs/getting-started.md").lower()
     assert "tailscale must be running on the client host" in getting_started, (
@@ -103,6 +116,9 @@ def main():
     assert "restic_init_result.stdout" in client_tasks, (
         "repository init changed_when must inspect registered stdout"
     )
+    assert "no_log: true" in client_tasks.split("- name: Initialize missing restic repositories")[0], (
+        "helper script templating must hide heartbeat URLs"
+    )
 
     client_systemd = read("roles/client/tasks/systemd.yml")
     assert "offsitebuddy_cleanup_stale" in client_systemd, "client role must support stale cleanup"
@@ -130,6 +146,26 @@ def main():
 
     assert not (ROOT / ".superpowers/sdd/task-5-report.md").exists(), (
         "internal .superpowers report should not be tracked"
+    )
+
+    galaxy = read("galaxy.yml")
+    for ignored in (".venv", ".uv-cache", "*.tar.gz", "**/.DS_Store"):
+        assert ignored in galaxy, "collection build must ignore %s" % ignored
+
+    contributing = read("CONTRIBUTING.md")
+    pr_template = read(".github/pull_request_template.md")
+    for command in (
+        "uv run --locked pre-commit run --all-files",
+        "uv run molecule converge",
+        "uv run molecule verify",
+        "uv run ansible-playbook -i localhost, -c local tests/e2e-local.yml",
+    ):
+        assert command in contributing, "CONTRIBUTING missing %s" % command
+        assert command in pr_template, "PR template missing %s" % command
+
+    dependabot = read(".github/dependabot.yml")
+    assert "package-ecosystem: uv" in dependabot, (
+        "Dependabot should track uv/Python dev deps"
     )
 
     print("review fix checks passed")

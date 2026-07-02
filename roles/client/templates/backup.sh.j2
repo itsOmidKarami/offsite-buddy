@@ -8,7 +8,7 @@ ping_url() {
   local label="${2:-heartbeat}"
   if [[ -n "$url" ]]; then
     if ! curl -fsS --retry 3 --max-time 10 "$url" >/dev/null; then
-      printf 'warning: %s ping failed for %s\n' "$label" "$url" >&2
+      printf 'warning: %s ping failed for redacted URL\n' "$label" >&2
     fi
   fi
 }
