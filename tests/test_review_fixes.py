@@ -54,6 +54,12 @@ def main():
     )
     assert "debian-family" in getting_started, "supported OS family must be explicit"
 
+    workflow = read(".github/workflows/ci.yml")
+    expected_trigger = "  pull_request:\n  push:\n    branches:\n      - main"
+    assert expected_trigger in workflow, (
+        "CI should run on PRs and only on pushes to main"
+    )
+
     verify = read("molecule/default/verify.yml")
     for snippet in (
         "bash -n",
