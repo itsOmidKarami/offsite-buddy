@@ -15,8 +15,9 @@ uv run ansible-galaxy collection build --force
 
 ## Release
 
-This repo uses release-please. Use conventional commit prefixes so it can choose
-the next version:
+This repo uses release-please. Because the repository uses squash merges, the PR
+title becomes the commit on `main`. Use conventional commit prefixes in PR titles
+so release-please can choose the next version:
 
 - `fix:` for patch releases
 - `feat:` for minor releases
