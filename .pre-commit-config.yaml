@@ -1,0 +1,25 @@
+---
+repos:
+  - repo: local
+    hooks:
+      - id: review-fixes
+        name: static regression checks
+        entry: >-
+          env UV_CACHE_DIR=.uv-cache
+          uv run --locked python tests/test_review_fixes.py
+        language: system
+        pass_filenames: false
+      - id: ansible-lint
+        name: ansible-lint
+        entry: >-
+          env UV_CACHE_DIR=.uv-cache
+          uv run --locked ansible-lint
+        language: system
+        pass_filenames: false
+      - id: yamllint
+        name: yamllint
+        entry: >-
+          env UV_CACHE_DIR=.uv-cache
+          uv run --locked yamllint .
+        language: system
+        pass_filenames: false

@@ -1,0 +1,74 @@
+---
+- name: Reject unsafe validation inputs
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    offsitebuddy_validation_base: >-
+      {{ playbook_dir | dirname }}/.ansible/tmp/validation-negative
+    root_repo_job:
+      repository: /
+    glob_exclude_job:
+      excludes:
+        - "{{ offsitebuddy_validation_base }}/source/**/.cache"
+    nested_quota_parent:
+      name: alice
+      quota:
+        path: "{{ offsitebuddy_validation_base }}/quota"
+    nested_quota_child:
+      name: bob
+      quota:
+        path: "{{ offsitebuddy_validation_base }}/quota/bob"
+    boolean_port_friend:
+      rest_server:
+        port: true
+    root_quota_item:
+      path: /
+  tasks:
+    - name: Assert root local repository is rejected
+      ansible.builtin.assert:
+        that:
+          - root_repo_job.repository == '/'
+          - >-
+            not (
+              root_repo_job.repository is not match('^/') or
+              root_repo_job.repository != '/'
+            )
+        fail_msg: Root local repository guard did not reject /.
+
+    - name: Assert glob exclude is rejected
+      ansible.builtin.assert:
+        that:
+          - >-
+            not (
+              glob_exclude_job.excludes | reject('search', '[*?\[]') | list |
+              length == glob_exclude_job.excludes | length
+            )
+        fail_msg: Glob exclude guard did not reject wildcard patterns.
+
+    - name: Assert nested quota paths are rejected
+      ansible.builtin.assert:
+        that:
+          - >-
+            nested_quota_child.quota.path is match(
+              '^' ~ (nested_quota_parent.quota.path | regex_escape) ~ '/'
+            )
+        fail_msg: Nested quota path guard did not detect overlap.
+
+    - name: Assert boolean rest-server port is rejected
+      ansible.builtin.assert:
+        that:
+          - >-
+            not (
+              boolean_port_friend.rest_server.port is not defined or
+              boolean_port_friend.rest_server.port | string is match('^[0-9]+$')
+            )
+        fail_msg: Boolean rest-server port guard did not reject true.
+
+    - name: Assert root quota path is rejected
+      ansible.builtin.assert:
+        that:
+          - root_quota_item.path == '/'
+          - not (root_quota_item.path != '/')
+        fail_msg: Quota path guard did not reject /.

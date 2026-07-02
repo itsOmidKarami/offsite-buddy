@@ -1,0 +1,11 @@
+.DS_Store
+*.tar.gz
+.ansible/
+.uv-cache/
+.venv/
+collections/
+.pytest_cache/
+.molecule/
+__pycache__/
+
+.superpowers/

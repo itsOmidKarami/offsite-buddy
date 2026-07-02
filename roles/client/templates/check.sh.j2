@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+job_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+args=(check)
+{% if job_check.read_data | default(false) | bool %}
+args+=(--read-data)
+{% endif %}
+
+docker compose --project-directory "$job_dir" run --rm restic "${args[@]}"

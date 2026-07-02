@@ -1,0 +1,162 @@
+---
+- name: Ensure friend stack directories exist
+  ansible.builtin.file:
+    path: "{{ offsitebuddy_server_root }}/friends/{{ friend.name }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    loop_var: friend
+    label: "{{ friend.name }}"
+
+- name: Ensure friend tailscale state directories exist
+  ansible.builtin.file:
+    path: >-
+      {{ offsitebuddy_server_root }}/friends/{{ friend.name }}/tailscale-state
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    loop_var: friend
+    label: "{{ friend.name }}"
+
+- name: Mark managed friend stack directories
+  ansible.builtin.copy:
+    content: "offsitebuddy\n"
+    dest: >-
+      {{ offsitebuddy_server_root }}/friends/{{ friend.name
+      }}/.offsitebuddy-managed
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    loop_var: friend
+    label: "{{ friend.name }}"
+
+- name: Write per-friend Tailscale environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ offsitebuddy_server_root }}/friends/{{ friend.name }}/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    loop_var: friend
+    index_var: friend_index
+    label: "{{ friend.name }}"
+  no_log: true
+  register: rest_server_env_render
+
+- name: Ensure passlib is installed for htpasswd
+  ansible.builtin.apt:
+    name: python3-passlib
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Write per-friend htpasswd file
+  community.general.htpasswd:
+    path: "{{ offsitebuddy_server_root }}/friends/{{ friend.name }}/htpasswd"
+    name: "{{ friend.rest_server.username }}"
+    password: "{{ friend.rest_server.password }}"
+    crypt_scheme: bcrypt
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    loop_var: friend
+    index_var: friend_index
+    label: "{{ friend.name }}"
+  no_log: true
+  register: rest_server_htpasswd_render
+
+- name: Write per-friend Compose file
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: >-
+      {{ offsitebuddy_server_root }}/friends/{{ friend.name }}/compose.yaml
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    loop_var: friend
+    index_var: friend_index
+    label: "{{ friend.name }}"
+  register: rest_server_compose_render
+
+- name: Start per-friend server stacks
+  community.docker.docker_compose_v2:
+    project_src: >-
+      {{ offsitebuddy_server_root }}/friends/{{ friend.name }}
+    state: present
+    pull: missing
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    loop_var: friend
+    label: "{{ friend.name }}"
+  when: offsitebuddy_start_services | bool
+
+- name: Restart changed friend server stacks
+  community.docker.docker_compose_v2:
+    project_src: "{{ offsitebuddy_server_root }}/friends/{{ friend.name }}"
+    state: restarted
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    loop_var: friend
+    index_var: friend_index
+    label: "{{ friend.name }}"
+  when:
+    - offsitebuddy_start_services | bool
+    - >-
+      rest_server_env_render.results[friend_index].changed or
+      rest_server_htpasswd_render.results[friend_index].changed or
+      rest_server_compose_render.results[friend_index].changed
+
+- name: Find managed friend stack markers
+  ansible.builtin.find:
+    paths: "{{ offsitebuddy_server_root }}/friends"
+    patterns: .offsitebuddy-managed
+    recurse: true
+    file_type: file
+  register: offsitebuddy_server_managed_markers
+  when: offsitebuddy_cleanup_stale | bool
+
+- name: Stop stale friend server stacks
+  vars:
+    current_friend_names: >-
+      {{ offsitebuddy_friends | map(attribute='name') | list }}
+    stale_friend_name: "{{ item.path | dirname | basename }}"
+  community.docker.docker_compose_v2:
+    project_src: "{{ item.path | dirname }}"
+    state: absent
+    remove_orphans: true
+  loop: "{{ offsitebuddy_server_managed_markers.files | default([]) }}"
+  loop_control:
+    label: "{{ stale_friend_name }}"
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - offsitebuddy_start_services | bool
+    - stale_friend_name not in current_friend_names
+
+- name: Remove stale friend stack directories
+  vars:
+    current_friend_names: >-
+      {{ offsitebuddy_friends | map(attribute='name') | list }}
+    stale_friend_name: "{{ item.path | dirname | basename }}"
+  ansible.builtin.file:
+    path: "{{ item.path | dirname }}"
+    state: absent
+  loop: "{{ offsitebuddy_server_managed_markers.files | default([]) }}"
+  loop_control:
+    label: "{{ stale_friend_name }}"
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - stale_friend_name not in current_friend_names

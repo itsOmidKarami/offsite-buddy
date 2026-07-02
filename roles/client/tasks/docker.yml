@@ -1,0 +1,8 @@
+---
+- name: Ensure client job root exists
+  ansible.builtin.file:
+    path: "{{ offsitebuddy_client_root }}"
+    state: directory
+    owner: "{{ offsitebuddy_client_owner }}"
+    group: "{{ offsitebuddy_client_group }}"
+    mode: "0755"

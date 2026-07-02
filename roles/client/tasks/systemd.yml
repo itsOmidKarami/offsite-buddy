@@ -1,0 +1,229 @@
+---
+- name: Write backup systemd services
+  ansible.builtin.template:
+    src: offsitebuddy-backup.service.j2
+    dest: "/etc/systemd/system/offsitebuddy-backup-{{ job.name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  notify: Reload systemd
+
+- name: Write backup systemd timers
+  ansible.builtin.template:
+    src: offsitebuddy-backup.timer.j2
+    dest: "/etc/systemd/system/offsitebuddy-backup-{{ job.name }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  notify: Reload systemd
+
+- name: Write check systemd services
+  ansible.builtin.template:
+    src: offsitebuddy-check.service.j2
+    dest: "/etc/systemd/system/offsitebuddy-check-{{ job.name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  when: (job.check | default({})).enabled | default(true) | bool
+  notify: Reload systemd
+
+- name: Write check systemd timers
+  ansible.builtin.template:
+    src: offsitebuddy-check.timer.j2
+    dest: "/etc/systemd/system/offsitebuddy-check-{{ job.name }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  when: (job.check | default({})).enabled | default(true) | bool
+  notify: Reload systemd
+
+- name: Stat stale check timer files
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/offsitebuddy-check-{{ job.name }}.timer"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  register: stale_check_timer_stats
+
+- name: Disable stale check timers
+  ansible.builtin.systemd:
+    name: "offsitebuddy-check-{{ item.0.name }}.timer"
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  loop: >-
+    {{
+      offsitebuddy_client_jobs
+      | zip(stale_check_timer_stats.results)
+      | list
+    }}
+  loop_control:
+    label: "{{ item.0.name }}"
+  when:
+    - offsitebuddy_start_services | bool
+    - not ((item.0.check | default({})).enabled | default(true) | bool)
+    - item.1.stat.exists
+
+- name: Remove stale check unit files
+  ansible.builtin.file:
+    path: >-
+      /etc/systemd/system/offsitebuddy-check-{{ item.0.name }}.{{ item.1 }}
+    state: absent
+  loop: "{{ offsitebuddy_client_jobs | product(['service', 'timer']) | list }}"
+  loop_control:
+    label: "{{ item.0.name }} {{ item.1 }}"
+  when:
+    - offsitebuddy_start_services | bool
+    - not ((item.0.check | default({})).enabled | default(true) | bool)
+  notify: Reload systemd
+
+- name: Find managed client job markers
+  ansible.builtin.find:
+    paths: "{{ offsitebuddy_client_root }}"
+    patterns: .offsitebuddy-managed
+    recurse: true
+    file_type: file
+  register: offsitebuddy_client_managed_markers
+  when: offsitebuddy_cleanup_stale | bool
+
+- name: Stop stale backup timers
+  vars:
+    current_client_job_names: >-
+      {{ offsitebuddy_client_jobs | map(attribute='name') | list }}
+    stale_job_name: "{{ item.path | dirname | basename }}"
+  ansible.builtin.systemd:
+    name: "offsitebuddy-backup-{{ stale_job_name }}.timer"
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  loop: "{{ offsitebuddy_client_managed_markers.files | default([]) }}"
+  loop_control:
+    label: "{{ stale_job_name }}"
+  failed_when: false
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - offsitebuddy_start_services | bool
+    - stale_job_name not in current_client_job_names
+
+- name: Stop stale check timers
+  vars:
+    current_client_job_names: >-
+      {{ offsitebuddy_client_jobs | map(attribute='name') | list }}
+    stale_job_name: "{{ item.path | dirname | basename }}"
+  ansible.builtin.systemd:
+    name: "offsitebuddy-check-{{ stale_job_name }}.timer"
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  loop: "{{ offsitebuddy_client_managed_markers.files | default([]) }}"
+  loop_control:
+    label: "{{ stale_job_name }}"
+  failed_when: false
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - offsitebuddy_start_services | bool
+    - stale_job_name not in current_client_job_names
+
+- name: Stop stale client services
+  vars:
+    current_client_job_names: >-
+      {{ offsitebuddy_client_jobs | map(attribute='name') | list }}
+    stale_job_name: "{{ item.0.path | dirname | basename }}"
+  ansible.builtin.systemd:
+    name: "offsitebuddy-{{ item.1 }}-{{ stale_job_name }}.service"
+    state: stopped
+    daemon_reload: true
+  loop: >-
+    {{
+      (offsitebuddy_client_managed_markers.files | default([]))
+      | product(['backup', 'check'])
+      | list
+    }}
+  loop_control:
+    label: "{{ stale_job_name }} {{ item.1 }}"
+  failed_when: false
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - offsitebuddy_start_services | bool
+    - stale_job_name not in current_client_job_names
+
+- name: Remove stale client unit files
+  vars:
+    current_client_job_names: >-
+      {{ offsitebuddy_client_jobs | map(attribute='name') | list }}
+    stale_job_name: "{{ item.0.path | dirname | basename }}"
+  ansible.builtin.file:
+    path: >-
+      /etc/systemd/system/offsitebuddy-{{ item.1 }}-{{ stale_job_name
+      }}.{{ item.2 }}
+    state: absent
+  loop: >-
+    {{
+      (offsitebuddy_client_managed_markers.files | default([]))
+      | product(['backup', 'check'], ['service', 'timer'])
+      | list
+    }}
+  loop_control:
+    label: "{{ stale_job_name }} {{ item.1 }} {{ item.2 }}"
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - stale_job_name not in current_client_job_names
+  notify: Reload systemd
+
+- name: Remove stale client job directories
+  vars:
+    current_client_job_names: >-
+      {{ offsitebuddy_client_jobs | map(attribute='name') | list }}
+    stale_job_name: "{{ item.path | dirname | basename }}"
+  ansible.builtin.file:
+    path: "{{ item.path | dirname }}"
+    state: absent
+  loop: "{{ offsitebuddy_client_managed_markers.files | default([]) }}"
+  loop_control:
+    label: "{{ stale_job_name }}"
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - stale_job_name not in current_client_job_names
+
+- name: Enable backup timers
+  ansible.builtin.systemd:
+    name: "offsitebuddy-backup-{{ job.name }}.timer"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  when: offsitebuddy_start_services | bool
+
+- name: Enable check timers
+  ansible.builtin.systemd:
+    name: "offsitebuddy-check-{{ job.name }}.timer"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  when:
+    - offsitebuddy_start_services | bool
+    - (job.check | default({})).enabled | default(true) | bool

@@ -1,0 +1,6 @@
+---
+- name: Configure OffsiteBuddy server
+  hosts: backup_servers
+  become: true
+  roles:
+    - offsitebuddy.backup.server

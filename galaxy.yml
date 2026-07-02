@@ -1,0 +1,39 @@
+---
+namespace: offsitebuddy
+name: backup
+version: 0.1.0
+readme: README.md
+authors:
+  - OffsiteBuddy contributors
+description: >-
+  Friend-to-friend off-site NAS backups with restic, rest-server, Docker
+  Compose, Tailscale, and hard quota-backed storage.
+license:
+  - MIT
+tags:
+  - storage
+  - backup
+  - restic
+  - nas
+  - tailscale
+  - docker
+dependencies:
+  community.general: ">=8.0.0"
+  community.docker: ">=3.0.0"
+repository: https://github.com/itsOmidKarami/offsite-buddy
+issues: https://github.com/itsOmidKarami/offsite-buddy/issues
+build_ignore:
+  - .gitignore
+  - .github
+  - .ansible
+  - .uv-cache
+  - .venv
+  - "*.tar.gz"
+  - .DS_Store
+  - "**/.DS_Store"
+  - collections
+  - molecule
+  - docs/superpowers
+  - .superpowers
+  - .superpowers/
+  - .yamllint

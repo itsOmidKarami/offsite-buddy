@@ -1,0 +1,8 @@
+---
+- name: Ensure server root exists
+  ansible.builtin.file:
+    path: "{{ offsitebuddy_server_root }}/friends"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"

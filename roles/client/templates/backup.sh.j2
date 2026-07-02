@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+job_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+ping_url() {
+  local url="${1:-}"
+  local label="${2:-heartbeat}"
+  if [[ -n "$url" ]]; then
+    if ! curl -fsS --retry 3 --max-time 10 "$url" >/dev/null; then
+      printf 'warning: %s ping failed for redacted URL\n' "$label" >&2
+    fi
+  fi
+}
+
+ping_url {{ job.heartbeat.start_url | default('') | quote }} "start"
+
+if docker compose --project-directory "$job_dir" run --rm restic backup {% for path in job.backup_paths %}{{ path | quote }} {% endfor %}--exclude-file /etc/offsitebuddy/excludes; then
+  ping_url {{ job.heartbeat.success_url | default('') | quote }} "success"
+else
+  ping_url {{ job.heartbeat.failure_url | default('') | quote }} "failure"
+  exit 1
+fi

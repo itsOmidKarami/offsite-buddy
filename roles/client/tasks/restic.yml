@@ -1,0 +1,135 @@
+---
+- name: Ensure client job directories exist
+  ansible.builtin.file:
+    path: "{{ offsitebuddy_client_root }}/{{ job.name }}"
+    state: directory
+    owner: "{{ offsitebuddy_client_owner }}"
+    group: "{{ offsitebuddy_client_group }}"
+    mode: "0755"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+
+- name: Write restic environment files
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ offsitebuddy_client_root }}/{{ job.name }}/.env"
+    owner: "{{ offsitebuddy_client_owner }}"
+    group: "{{ offsitebuddy_client_group }}"
+    mode: "0600"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  no_log: true
+
+- name: Mark managed client job directories
+  ansible.builtin.copy:
+    content: "offsitebuddy\n"
+    dest: "{{ offsitebuddy_client_root }}/{{ job.name }}/.offsitebuddy-managed"
+    owner: "{{ offsitebuddy_client_owner }}"
+    group: "{{ offsitebuddy_client_group }}"
+    mode: "0644"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+
+- name: Write restic password files
+  ansible.builtin.copy:
+    content: "{{ job.password }}\n"
+    dest: "{{ offsitebuddy_client_root }}/{{ job.name }}/password"
+    owner: "{{ offsitebuddy_client_owner }}"
+    group: "{{ offsitebuddy_client_group }}"
+    mode: "0600"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  no_log: true
+
+- name: Write restic excludes files
+  ansible.builtin.template:
+    src: excludes.j2
+    dest: "{{ offsitebuddy_client_root }}/{{ job.name }}/excludes"
+    owner: "{{ offsitebuddy_client_owner }}"
+    group: "{{ offsitebuddy_client_group }}"
+    mode: "0644"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+
+- name: Write restic Compose files
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ offsitebuddy_client_root }}/{{ job.name }}/compose.yaml"
+    owner: "{{ offsitebuddy_client_owner }}"
+    group: "{{ offsitebuddy_client_group }}"
+    mode: "0644"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+
+- name: Write restic helper scripts
+  ansible.builtin.template:
+    src: "{{ helper }}.j2"
+    dest: "{{ offsitebuddy_client_root }}/{{ job.name }}/{{ helper }}"
+    owner: "{{ offsitebuddy_client_owner }}"
+    group: "{{ offsitebuddy_client_group }}"
+    mode: "0750"
+  loop: >-
+    {{
+      offsitebuddy_client_jobs
+      | product([
+          'backup.sh',
+          'init.sh',
+          'check.sh',
+          'restore-latest.sh',
+          'snapshots.sh',
+          'stats.sh'
+        ])
+      | list
+    }}
+  loop_control:
+    label: "{{ item.0.name }} {{ item.1 }}"
+  vars:
+    job: "{{ item.0 }}"
+    helper: "{{ item.1 }}"
+    job_check: "{{ item.0.check | default({}) }}"
+  no_log: true
+
+- name: Initialize missing restic repositories
+  ansible.builtin.command:
+    cmd: "{{ offsitebuddy_client_root }}/{{ job.name }}/init.sh"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  when:
+    - offsitebuddy_start_services | bool
+    - job.init_if_missing | default(true) | bool
+  register: restic_init_result
+  no_log: true
+  changed_when: >-
+    'created restic repository' in
+    (restic_init_result.stdout | default(''))
+
+- name: Run initial backup
+  vars:
+    job_dir: "{{ offsitebuddy_client_root }}/{{ job.name }}"
+    marker_file: "{{ job_dir }}/.initial-backup-complete"
+  ansible.builtin.shell:
+    cmd: >-
+      {{ (job_dir + '/backup.sh') | quote }} && touch {{ marker_file | quote }}
+    creates: "{{ marker_file }}"
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.name }}"
+  when:
+    - offsitebuddy_start_services | bool
+    - job.run_initial_backup | default(true) | bool
+  changed_when: true

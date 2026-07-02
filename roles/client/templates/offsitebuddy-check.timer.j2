@@ -1,0 +1,9 @@
+[Unit]
+Description=Run OffsiteBuddy restic check job {{ job.name }}
+
+[Timer]
+OnCalendar={{ (job.check | default({})).schedule | default('weekly') }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,28 @@
+---
+services:
+  restic:
+    image: "{{ offsitebuddy_restic_image }}"
+    env_file:
+      - .env
+    volumes:
+      - type: bind
+        source: ./password
+        target: /run/secrets/restic-password
+        read_only: true
+      - type: bind
+        source: ./excludes
+        target: /etc/offsitebuddy/excludes
+        read_only: true
+{% for path in job.backup_paths %}
+      - type: bind
+        source: "{{ path }}"
+        target: "{{ path }}"
+        read_only: true
+{% endfor %}
+{% if job.repository is match('^/') %}
+      - type: bind
+        source: "{{ job.repository }}"
+        target: "{{ job.repository }}"
+{% endif %}
+    entrypoint:
+      - restic

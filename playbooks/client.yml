@@ -1,0 +1,6 @@
+---
+- name: Configure OffsiteBuddy client
+  hosts: backup_clients
+  become: true
+  roles:
+    - offsitebuddy.backup.client
