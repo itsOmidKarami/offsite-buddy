@@ -6,6 +6,18 @@
     fail_msg: >-
       offsitebuddy_friends must be a list of friend declarations.
 
+- name: Validate server root path
+  ansible.builtin.assert:
+    that:
+      - offsitebuddy_server_root is string
+      - offsitebuddy_server_root | regex_search('^/') is not none
+      - "'..' not in offsitebuddy_server_root.split('/')"
+      - offsitebuddy_server_root != '/'
+      - offsitebuddy_server_root is not match('^.+/$')
+    fail_msg: >-
+      offsitebuddy_server_root must be an absolute managed server root without
+      root, trailing slash, or traversal segments.
+
 - name: Validate each friend declaration
   ansible.builtin.assert:
     that:
@@ -16,19 +28,37 @@
       - item.quota.path is string
       - item.quota.path | regex_search('^/') is not none
       - "'..' not in item.quota.path.split('/')"
+      - item.quota.path != '/'
+      - item.quota.path is not match('^.+/$')
       - item.quota.enforced | default(false) | bool
       - item.quota.enforcement_note is defined
       - item.tailscale is defined
       - item.tailscale.hostname is defined
+      - item.tailscale.hostname is string
+      - >-
+        item.tailscale.hostname | regex_search(
+          '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+        ) is not none
       - item.tailscale.auth_key is defined
+      - item.tailscale.auth_key is string
+      - item.tailscale.auth_key | length > 0
       - item.rest_server is defined
       - item.rest_server.username is defined
+      - item.rest_server.username is string
+      - item.rest_server.username | length > 0
+      - item.rest_server.username | regex_search('[:\s]') is none
       - item.rest_server.password is defined
+      - item.rest_server.password is string
+      - item.rest_server.password | length > 0
+      - >-
+        item.rest_server.port is not defined or
+        item.rest_server.port | string is match('^[0-9]+$')
       - item.rest_server.port | default(8000) | int > 0
       - item.rest_server.port | default(8000) | int < 65536
     fail_msg: >-
-      Each friend needs name, absolute quota path without traversal segments
-      and with enforced=true, Tailscale auth, and rest-server credentials.
+      Each friend needs name, absolute quota path without root, trailing slash,
+      or traversal segments and with enforced=true, valid Tailscale auth, and
+      rest-server credentials.
   loop: "{{ offsitebuddy_friends }}"
   loop_control:
     label: "{{ item.name | default('missing-name') }}"
@@ -51,6 +81,49 @@
         | length == offsitebuddy_friends | length
     fail_msg: >-
       offsitebuddy_friends quota paths must be unique.
+
+- name: Validate friend quota paths do not overlap managed server root
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (
+          item.quota.path == offsitebuddy_server_root or
+          item.quota.path is match(
+            '^' ~ (offsitebuddy_server_root | regex_escape) ~ '/'
+          ) or
+          offsitebuddy_server_root is match(
+            '^' ~ (item.quota.path | regex_escape) ~ '/'
+          )
+        )
+    fail_msg: >-
+      Quota path {{ item.quota.path }} for friend {{ item.name }} must not
+      overlap managed server root {{ offsitebuddy_server_root }}.
+  loop: "{{ offsitebuddy_friends }}"
+  loop_control:
+    label: "{{ item.name }} {{ item.quota.path }}"
+  no_log: true
+
+- name: Validate friend quota paths do not overlap each other
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (
+          item.0.quota.path == item.1.quota.path or
+          item.0.quota.path is match(
+            '^' ~ (item.1.quota.path | regex_escape) ~ '/'
+          ) or
+          item.1.quota.path is match(
+            '^' ~ (item.0.quota.path | regex_escape) ~ '/'
+          )
+        )
+    fail_msg: >-
+      Quota path {{ item.0.quota.path }} for friend {{ item.0.name }} must not
+      overlap quota path {{ item.1.quota.path }} for friend {{ item.1.name }}.
+  loop: "{{ offsitebuddy_friends | product(offsitebuddy_friends) | list }}"
+  loop_control:
+    label: "{{ item.0.name }} {{ item.1.name }}"
+  when: item.0.name < item.1.name
+  no_log: true
 
 - name: Validate friend Tailscale hostnames are unique
   ansible.builtin.assert:

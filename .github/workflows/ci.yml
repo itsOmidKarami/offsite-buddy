@@ -30,6 +30,10 @@ jobs:
         run: uv run molecule converge
       - name: Run Molecule verify
         run: uv run molecule verify
+      - name: Run negative validation checks
+        run: >-
+          uv run ansible-playbook -i localhost, -c local
+          tests/validation-negative.yml
       - name: Run local backup restore smoke
         run: uv run ansible-playbook -i localhost, -c local tests/e2e-local.yml
       - name: Build collection

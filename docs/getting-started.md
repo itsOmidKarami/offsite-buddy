@@ -9,7 +9,7 @@
 7. Configure `offsitebuddy_friends` on the server.
 8. Run `playbooks/server.yml`.
 9. Share the friend-specific Tailscale device manually in the Tailscale admin UI.
-10. Configure `offsitebuddy_client_jobs` on the client. If the repository URL embeds credentials, URL-encoded username and password values are required.
+10. Configure `offsitebuddy_client_jobs` on the client. If the repository URL embeds credentials, URL-encoded username and password values are required. Excludes must be concrete absolute paths, not globs.
 11. Run `playbooks/client.yml`.
 12. Run a restore test.
 

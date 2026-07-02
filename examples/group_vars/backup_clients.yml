@@ -14,7 +14,8 @@ offsitebuddy_client_jobs:
       - /data/photos
       - /data/documents
     excludes:
-      - /data/**/.cache
+      - /data/photos/.cache
+      - /data/documents/.cache
       - /data/downloads/tmp
     check:
       enabled: true

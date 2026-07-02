@@ -26,7 +26,7 @@ services:
       PASSWORD_FILE: /run/secrets/htpasswd
       OPTIONS: >-
         --append-only
-        --listen :{{ friend.rest_server.port | default(8000) }}
+        --listen :{{ friend.rest_server.port | default(8000) | int }}
     volumes:
       - type: bind
         source: "{{ friend.quota.path }}"

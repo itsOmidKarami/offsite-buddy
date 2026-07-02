@@ -112,6 +112,7 @@
     - offsitebuddy_start_services | bool
     - job.init_if_missing | default(true) | bool
   register: restic_init_result
+  no_log: true
   changed_when: >-
     'created restic repository' in
     (restic_init_result.stdout | default(''))

@@ -6,6 +6,18 @@
     fail_msg: >-
       offsitebuddy_client_jobs must be a list of backup job declarations.
 
+- name: Validate client root path
+  ansible.builtin.assert:
+    that:
+      - offsitebuddy_client_root is string
+      - offsitebuddy_client_root | regex_search('^/') is not none
+      - "'..' not in offsitebuddy_client_root.split('/')"
+      - offsitebuddy_client_root != '/'
+      - offsitebuddy_client_root is not match('^.+/$')
+    fail_msg: >-
+      offsitebuddy_client_root must be an absolute managed client root without
+      root, trailing slash, or traversal segments.
+
 - name: Validate each client job
   ansible.builtin.assert:
     that:
@@ -13,6 +25,7 @@
       - item.name | regex_search('^[a-z][a-z0-9_-]*$') is not none
       - item.repository is defined
       - item.repository is string
+      - item.repository | length > 0
       - item.repository | regex_search('\s') is none
       - >-
         item.repository is match('^/') or
@@ -24,7 +37,15 @@
       - >-
         item.repository is not match('^/') or
         '..' not in item.repository.split('/')
+      - >-
+        item.repository is not match('^/') or
+        item.repository != '/'
+      - >-
+        item.repository is not match('^/') or
+        item.repository is not match('^.+/$')
       - item.password is defined
+      - item.password is string
+      - item.password | length > 0
       - item.schedule is defined
       - >-
         item.schedule | regex_search('^([01][0-9]|2[0-3]):[0-5][0-9]$')
@@ -33,7 +54,16 @@
       - item.backup_paths | type_debug == 'list'
       - item.backup_paths | length > 0
       - >-
+        item.backup_paths | select('string') | list | length ==
+        item.backup_paths | length
+      - >-
         item.backup_paths | select('match', '^/') | list | length ==
+        item.backup_paths | length
+      - >-
+        item.backup_paths | reject('equalto', '/') | list | length ==
+        item.backup_paths | length
+      - >-
+        item.backup_paths | reject('match', '^.+/$') | list | length ==
         item.backup_paths | length
       - >-
         item.backup_paths | reject('search', '(^|/)\.\.(/|$)') | list |
@@ -49,15 +79,28 @@
         item.excludes | length
       - >-
         item.excludes is not defined or
+        item.excludes | reject('equalto', '/') | list | length ==
+        item.excludes | length
+      - >-
+        item.excludes is not defined or
+        item.excludes | reject('match', '^.+/$') | list | length ==
+        item.excludes | length
+      - >-
+        item.excludes is not defined or
         item.excludes | reject('search', '(^|/)\.\.(/|$)') | list | length ==
+        item.excludes | length
+      - >-
+        item.excludes is not defined or
+        item.excludes | reject('search', '[*?\[]') | list | length ==
         item.excludes | length
       - item.check is not defined or item.check is mapping
     fail_msg: >-
       Each client job needs name, repository, password, HH:MM schedule,
       supported repository scheme or absolute local repository, absolute
-      backup_paths without traversal segments, optional absolute excludes
-      without traversal segments, and an optional check mapping. REST URLs with
-      embedded credentials must already be url-encoded.
+      backup_paths without root, trailing slash, or traversal segments,
+      optional absolute excludes without root, trailing slash, or traversal
+      segments or globs, and an optional check mapping. REST URLs with embedded
+      credentials must already be url-encoded.
   loop: "{{ offsitebuddy_client_jobs }}"
   loop_control:
     label: "{{ item.name | default('missing-name') }}"
@@ -81,6 +124,49 @@
         | length == offsitebuddy_client_jobs | length
     fail_msg: >-
       offsitebuddy_client_jobs names must be unique.
+
+- name: Validate local repository paths do not overlap managed client root
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (
+          item.repository == offsitebuddy_client_root or
+          item.repository is match(
+            '^' ~ (offsitebuddy_client_root | regex_escape) ~ '/'
+          ) or
+          offsitebuddy_client_root is match(
+            '^' ~ (item.repository | regex_escape) ~ '/'
+          )
+        )
+    fail_msg: >-
+      Local repository {{ item.repository }} for job {{ item.name }} must not
+      overlap managed client root {{ offsitebuddy_client_root }}.
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    label: "{{ item.name }} {{ item.repository }}"
+  when: item.repository is match('^/')
+  no_log: true
+
+- name: Validate backup paths do not overlap managed client root
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (
+          item.1 == offsitebuddy_client_root or
+          item.1 is match(
+            '^' ~ (offsitebuddy_client_root | regex_escape) ~ '/'
+          ) or
+          offsitebuddy_client_root is match(
+            '^' ~ (item.1 | regex_escape) ~ '/'
+          )
+        )
+    fail_msg: >-
+      Backup path {{ item.1 }} for job {{ item.0.name }} must not overlap
+      managed client root {{ offsitebuddy_client_root }}.
+  loop: "{{ offsitebuddy_client_jobs | subelements('backup_paths') }}"
+  loop_control:
+    label: "{{ item.0.name }} {{ item.1 }}"
+  no_log: true
 
 - name: Stat client backup paths
   ansible.builtin.stat:
@@ -119,8 +205,6 @@
     label: "{{ item.0.name }} {{ item.0.repository }} {{ item.1 }}"
   when: item.0.repository is match('^/')
   no_log: true
-  vars:
-    offsitebuddy_client_repo_source_overlaps: true
 
 - name: Validate excludes do not cover backup paths
   ansible.builtin.assert:
@@ -140,8 +224,6 @@
   loop_control:
     label: "{{ item.0.name }} {{ item.1 }}"
   no_log: true
-  vars:
-    offsitebuddy_client_exclude_source_overlaps: true
 
 - name: Check systemd-analyze availability
   ansible.builtin.command:

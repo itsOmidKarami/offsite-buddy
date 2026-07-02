@@ -42,12 +42,25 @@ def main():
         "systemd-analyze calendar",
         "url-encoded",
         "offsitebuddy_client_supported_repository_schemes",
-        "offsitebuddy_client_repo_source_overlaps",
-        "offsitebuddy_client_exclude_source_overlaps",
+        "Validate local repository paths do not overlap backup paths",
+        "Validate excludes do not cover backup paths",
         "item.excludes | type_debug == 'list'",
+        "offsitebuddy_client_root | regex_search('^/') is not none",
+        "item.repository | length > 0",
         "'..' not in item.repository.split('/')",
+        "item.repository != '/'",
+        "item.repository is not match('^.+/$')",
+        "item.password is string",
+        "item.password | length > 0",
+        "item.backup_paths | select('string') | list | length",
+        "item.backup_paths | reject('equalto', '/')",
+        "item.backup_paths | reject('match', '^.+/$')",
         "item.backup_paths | reject('search', '(^|/)\\.\\.(/|$)')",
+        "item.excludes | reject('equalto', '/')",
+        "item.excludes | reject('match', '^.+/$')",
         "item.excludes | reject('search', '(^|/)\\.\\.(/|$)')",
+        "item.excludes | reject('search', '[*?\\[]')",
+        "managed client root",
     ):
         assert snippet in validate, "missing client validation: %s" % snippet
 
@@ -77,6 +90,19 @@ def main():
     assert "'..' not in item.quota.path.split('/')" in server_validate, (
         "server quota paths must reject traversal segments"
     )
+    for snippet in (
+        "offsitebuddy_server_root | regex_search('^/') is not none",
+        "item.quota.path != '/'",
+        "item.quota.path is not match('^.+/$')",
+        "managed server root",
+        "item.tailscale.auth_key is string",
+        "item.rest_server.username is string",
+        "item.rest_server.password is string",
+        "item.rest_server.port is not defined or",
+        "item.rest_server.port | string is match('^[0-9]+$')",
+        "Validate friend quota paths do not overlap each other",
+    ):
+        assert snippet in server_validate, "missing server validation: %s" % snippet
 
     quota_validate = read("roles/quota/tasks/main.yml")
     assert "item.path | regex_search('^/')" in quota_validate, (
@@ -84,6 +110,10 @@ def main():
     )
     assert "'..' not in item.path.split('/')" in quota_validate, (
         "quota role paths must reject traversal segments"
+    )
+    assert "item.path != '/'" in quota_validate, "quota role paths must reject root"
+    assert "item.path is not match('^.+/$')" in quota_validate, (
+        "quota role paths must reject trailing slashes"
     )
 
     getting_started = read("docs/getting-started.md").lower()
@@ -100,6 +130,9 @@ def main():
     expected_trigger = "  pull_request:\n  push:\n    branches:\n      - main"
     assert expected_trigger in workflow, (
         "CI should run on PRs and only on pushes to main"
+    )
+    assert "tests/validation-negative.yml" in workflow, (
+        "CI must reject unsafe validation inputs"
     )
     assert "tests/e2e-local.yml" in workflow, "CI must exercise local backup and restore"
 
@@ -128,6 +161,10 @@ def main():
     assert "no_log: true" in client_tasks.split("- name: Initialize missing restic repositories")[0], (
         "helper script templating must hide heartbeat URLs"
     )
+    init_task = client_tasks.split(
+        "- name: Initialize missing restic repositories", 1
+    )[1].split("- name: Run initial backup", 1)[0]
+    assert "no_log: true" in init_task, "repository init must hide repository URLs"
 
     client_systemd = read("roles/client/tasks/systemd.yml")
     assert "offsitebuddy_cleanup_stale" in client_systemd, "client role must support stale cleanup"
@@ -141,6 +178,21 @@ def main():
     assert "job.repository is match('^/')" in client_compose, (
         "local repository paths must be mounted for e2e backup/restore"
     )
+
+    server_compose = read("roles/server/templates/compose.yaml.j2")
+    assert "friend.rest_server.port | default(8000) | int" in server_compose, (
+        "server compose must render normalized integer ports"
+    )
+
+    restore = read("roles/client/templates/restore-latest.sh.j2")
+    for snippet in (
+        "Restore target must be an absolute path",
+        "Restore target must not be /",
+        "Restore target must not end with /",
+        "Restore target must not overlap backup source",
+        "Restore target must be an existing empty directory",
+    ):
+        assert snippet in restore, "missing restore target guard: %s" % snippet
 
     e2e = read("tests/e2e-local.yml")
     for snippet in (
@@ -167,6 +219,7 @@ def main():
         "uv run --locked pre-commit run --all-files",
         "uv run molecule converge",
         "uv run molecule verify",
+        "uv run ansible-playbook -i localhost, -c local tests/validation-negative.yml",
         "uv run ansible-playbook -i localhost, -c local tests/e2e-local.yml",
     ):
         assert command in contributing, "CONTRIBUTING missing %s" % command

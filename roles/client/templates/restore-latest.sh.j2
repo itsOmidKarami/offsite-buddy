@@ -9,4 +9,36 @@ fi
 job_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 target="$1"
 
+if [[ "$target" != /* ]]; then
+  echo "Restore target must be an absolute path" >&2
+  exit 2
+fi
+
+if [[ "$target" == "/" ]]; then
+  echo "Restore target must not be /" >&2
+  exit 2
+fi
+
+if [[ "$target" == */ ]]; then
+  echo "Restore target must not end with /" >&2
+  exit 2
+fi
+
+for source in {% for path in job.backup_paths %}{{ path | quote }} {% endfor %}; do
+  if [[ "$target" == "$source" || "$target" == "$source"/* || "$source" == "$target"/* ]]; then
+    echo "Restore target must not overlap backup source $source" >&2
+    exit 2
+  fi
+done
+
+if [[ ! -d "$target" ]]; then
+  echo "Restore target must be an existing empty directory" >&2
+  exit 2
+fi
+
+if [[ -n "$(find "$target" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+  echo "Restore target must be an existing empty directory" >&2
+  exit 2
+fi
+
 docker compose --project-directory "$job_dir" run --rm -v "$target:$target:rw" restic restore latest --target "$target"
