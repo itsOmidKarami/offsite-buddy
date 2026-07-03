@@ -1,0 +1,154 @@
+---
+name: Release
+
+"on":
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish, for example v0.1.1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Release and publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check release token
+        env:
+          RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_PLEASE_TOKEN" ]; then
+            echo "::error::Set the RELEASE_PLEASE_TOKEN repository secret"
+            exit 1
+          fi
+
+      - uses: googleapis/release-please-action@v4
+        if: ${{ github.event_name == 'push' }}
+        id: release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: Resolve release tag
+        id: release_tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${{ steps.release.outputs.tag_name }}"
+          fi
+
+          if [ -z "$tag" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          case "$tag" in
+            v*) ;;
+            *)
+              echo "::error::Release tag must start with v"
+              exit 1
+              ;;
+          esac
+
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        if: ${{ steps.release_tag.outputs.publish == 'true' }}
+        with:
+          ref: ${{ steps.release_tag.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        if: ${{ steps.release_tag.outputs.publish == 'true' }}
+        with:
+          python-version: "3.12"
+
+      - name: Verify release version
+        if: ${{ steps.release_tag.outputs.publish == 'true' }}
+        id: version
+        run: |
+          tag="${{ steps.release_tag.outputs.tag }}"
+          namespace="$(awk '/^namespace:/ { print $2; exit }' galaxy.yml)"
+          name="$(awk '/^name:/ { print $2; exit }' galaxy.yml)"
+          version="$(awk '/^version:/ { print $2; exit }' galaxy.yml)"
+
+          if [ -z "$namespace" ] || [ -z "$name" ] || [ -z "$version" ]; then
+            echo "::error::Could not read namespace/name/version"
+            echo "::error::from galaxy.yml"
+            exit 1
+          fi
+
+          if [ "$tag" != "v$version" ]; then
+            echo "::error::Release tag $tag does not match galaxy.yml"
+            echo "::error::version $version"
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          artifact="$namespace-$name-$version.tar.gz"
+          echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
+
+      - name: Install tools
+        if: ${{ steps.release_tag.outputs.publish == 'true' }}
+        run: |
+          python -m pip install --upgrade pip uv
+          uv sync --locked --group dev
+
+      - name: Build collection
+        if: ${{ steps.release_tag.outputs.publish == 'true' }}
+        run: |
+          artifact="${{ steps.version.outputs.artifact }}"
+          uv run ansible-galaxy collection build --force
+          test -f "$artifact"
+
+      - name: Upload release artifact
+        if: ${{ steps.release_tag.outputs.publish == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: >-
+          gh release upload "${{ steps.release_tag.outputs.tag }}"
+          "${{ steps.version.outputs.artifact }}"
+          --repo "$GITHUB_REPOSITORY"
+          --clobber
+
+      - name: Check Galaxy token
+        if: ${{ steps.release_tag.outputs.publish == 'true' }}
+        env:
+          ANSIBLE_GALAXY_API_TOKEN: ${{ secrets.ANSIBLE_GALAXY_API_TOKEN }}
+        run: |
+          if [ -z "$ANSIBLE_GALAXY_API_TOKEN" ]; then
+            echo "::error::Set the ANSIBLE_GALAXY_API_TOKEN repository secret"
+            exit 1
+          fi
+
+      - name: Publish to Ansible Galaxy
+        if: ${{ steps.release_tag.outputs.publish == 'true' }}
+        env:
+          ANSIBLE_GALAXY_API_TOKEN: ${{ secrets.ANSIBLE_GALAXY_API_TOKEN }}
+        run: |
+          artifact="${{ steps.version.outputs.artifact }}"
+          config="$RUNNER_TEMP/ansible-galaxy.cfg"
+
+          {
+            printf '[galaxy]\n'
+            printf 'server_list = galaxy\n'
+            printf '[galaxy_server.galaxy]\n'
+            printf 'url=https://galaxy.ansible.com/\n'
+            printf 'token=%s\n' "$ANSIBLE_GALAXY_API_TOKEN"
+          } > "$config"
+          chmod 600 "$config"
+
+          ANSIBLE_CONFIG="$config" uv run ansible-galaxy collection publish \
+            "$artifact" \
+            --import-timeout 600

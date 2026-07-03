@@ -1,5 +1,10 @@
 ## Summary
 
+Release impact:
+
+- [ ] PR title uses `fix:`, `feat:`, `feat!:`, `docs:`, `chore:`, or another
+      conventional commit prefix
+
 ## Validation
 
 - [ ] `uv run --locked pre-commit run --all-files`
