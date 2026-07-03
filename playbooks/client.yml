@@ -3,4 +3,4 @@
   hosts: backup_clients
   become: true
   roles:
-    - itsomidkarami.backup.client
+    - itsomidkarami.offsitebuddy.client

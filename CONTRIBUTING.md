@@ -19,9 +19,10 @@ This repo uses release-please. Because the repository uses squash merges, the PR
 title becomes the commit on `main`. Use conventional commit prefixes in PR titles
 so release-please can choose the next version:
 
-- `fix:` for patch releases
-- `feat:` for minor releases
-- `feat!:` or `BREAKING CHANGE:` for major releases
+- While version is `0.x`, `fix:` and `feat:` create patch releases, and
+  breaking changes create minor releases.
+- From `1.0.0` onward, `fix:` creates patch releases, `feat:` creates minor
+  releases, and breaking changes create major releases.
 
 One-time setup:
 
@@ -30,7 +31,12 @@ One-time setup:
 2. Add `ANSIBLE_GALAXY_API_TOKEN` as a repository secret.
 3. Add `RELEASE_PLEASE_TOKEN` as a repository secret. Use a fine-grained GitHub
    token with contents, pull request, and issue write access for this repository.
+4. Allow `googleapis/release-please-action@v4` in the repository's selected
+   GitHub Actions allowlist.
 
 To publish, merge the release-please PR. The release workflow creates the tag and
 GitHub Release, builds the collection, attaches the tarball to the release, and
 publishes it to Ansible Galaxy.
+
+If publishing fails after the release is created, rerun the `Release` workflow
+manually with the existing tag.

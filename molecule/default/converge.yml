@@ -45,5 +45,5 @@
         state: directory
         mode: "0755"
   roles:
-    - role: itsomidkarami.backup.server
-    - role: itsomidkarami.backup.client
+    - role: itsomidkarami.offsitebuddy.server
+    - role: itsomidkarami.offsitebuddy.client
