@@ -24,16 +24,6 @@ so release-please can choose the next version:
 - From `1.0.0` onward, `fix:` creates patch releases, `feat:` creates minor
   releases, and breaking changes create major releases.
 
-One-time setup:
-
-1. Confirm the lower-case `itsomidkarami` namespace is available in Ansible
-   Galaxy.
-2. Add `ANSIBLE_GALAXY_API_TOKEN` as a repository secret.
-3. Add `RELEASE_PLEASE_TOKEN` as a repository secret. Use a fine-grained GitHub
-   token with contents, pull request, and issue write access for this repository.
-4. Allow `googleapis/release-please-action@v4` in the repository's selected
-   GitHub Actions allowlist.
-
 To publish, merge the release-please PR. The release workflow creates the tag and
 GitHub Release, builds the collection, attaches the tarball to the release, and
 publishes it to Ansible Galaxy.
