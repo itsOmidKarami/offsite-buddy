@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.2](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.1...v0.1.2) (2026-07-03)
+
+
+### Bug Fixes
+
+* correct immutable release recovery guidance ([435370f](https://github.com/itsOmidKarami/offsite-buddy/commit/435370f0b8e583cc96240400e2d422397cb38f38))
+* upload release assets before publishing ([ae0df61](https://github.com/itsOmidKarami/offsite-buddy/commit/ae0df6120108dea7d86b947c60b182537aa97da0))
+
 ## [0.1.1](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.0...v0.1.1) (2026-07-03)
 
 
