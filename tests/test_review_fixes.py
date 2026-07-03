@@ -145,10 +145,10 @@ def main():
     assert "tests/e2e-local.yml" in workflow, "CI must exercise local backup and restore"
 
     release_workflow = read(".github/workflows/release.yml")
-    assert "googleapis/release-please-action@v5" in release_workflow, (
-        "release-please action should use a Node 24 runtime"
+    assert "googleapis/release-please-action@v4" in release_workflow, (
+        "release-please action v4 should be used until v5 startup failures are resolved"
     )
-    assert "googleapis/release-please-action@v4" not in release_workflow
+    assert "release-please-action v5 currently fails" in release_workflow
 
     validation_negative = read("tests/validation-negative.yml")
     assert "rescue:" not in validation_negative, (
