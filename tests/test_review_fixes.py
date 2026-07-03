@@ -249,6 +249,12 @@ def main():
     assert '"include-component-in-tag": false' in release_please, (
         "release tags must be plain vX.Y.Z tags for the publish workflow"
     )
+    assert '"type": "generic"' in release_please, (
+        "release-please must update galaxy.yml without rewriting YAML formatting"
+    )
+    assert "x-release-please-version" in galaxy, (
+        "galaxy.yml must mark the version line for release-please"
+    )
 
     contributing = read("CONTRIBUTING.md")
     pr_template = read(".github/pull_request_template.md")

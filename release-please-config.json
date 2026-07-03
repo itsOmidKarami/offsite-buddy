@@ -9,9 +9,8 @@
       "package-name": "itsomidkarami.offsitebuddy",
       "extra-files": [
         {
-          "type": "yaml",
-          "path": "galaxy.yml",
-          "jsonpath": "$.version"
+          "type": "generic",
+          "path": "galaxy.yml"
         }
       ]
     }
