@@ -182,8 +182,8 @@ jobs:
               else
                 echo "::error::Release $tag is already published"
                 echo "::error::Missing asset: $artifact"
-                echo "::error::Delete only the GitHub Release, keep the tag"
-                echo "::error::then rerun this workflow"
+                echo "::error::Immutable releases cannot be modified"
+                echo "::error::Ship a new version tag instead"
                 exit 1
               fi
               ;;

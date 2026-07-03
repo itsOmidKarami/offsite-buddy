@@ -30,5 +30,5 @@ GitHub Release, and publishes it to Ansible Galaxy.
 
 If publishing fails after the GitHub Release is published with its tarball,
 rerun the `Release` workflow manually with the existing tag. If a published
-immutable release is missing the tarball, delete only the GitHub Release, keep
-the tag, then rerun the workflow with that tag.
+immutable release is missing the tarball, ship a new patch release; GitHub does
+not allow attaching assets or recreating a release for that tag after deletion.

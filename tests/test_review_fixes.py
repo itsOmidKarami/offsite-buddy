@@ -163,6 +163,8 @@ def main():
         "gh release edit \"$tag\"",
         "--draft=false",
         "Release $tag already has $artifact",
+        "Immutable releases cannot be modified",
+        "Ship a new version tag instead",
     ):
         assert snippet in release_workflow, "missing release artifact flow: %s" % snippet
 
