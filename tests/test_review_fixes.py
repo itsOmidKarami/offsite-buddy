@@ -144,6 +144,12 @@ def main():
     )
     assert "tests/e2e-local.yml" in workflow, "CI must exercise local backup and restore"
 
+    release_workflow = read(".github/workflows/release.yml")
+    assert "googleapis/release-please-action@v5" in release_workflow, (
+        "release-please action should use a Node 24 runtime"
+    )
+    assert "googleapis/release-please-action@v4" not in release_workflow
+
     validation_negative = read("tests/validation-negative.yml")
     assert "rescue:" not in validation_negative, (
         "negative validation checks must not print rescued task failures"
@@ -238,6 +244,11 @@ def main():
         "release-please-config.json",
     ):
         assert ignored in galaxy, "collection build must ignore %s" % ignored
+
+    release_please = read("release-please-config.json")
+    assert '"include-component-in-tag": false' in release_please, (
+        "release tags must be plain vX.Y.Z tags for the publish workflow"
+    )
 
     contributing = read("CONTRIBUTING.md")
     pr_template = read(".github/pull_request_template.md")
