@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.2...v0.1.3) (2026-07-03)
+
+
+### Bug Fixes
+
+* add role readmes for Galaxy import ([13fd872](https://github.com/itsOmidKarami/offsite-buddy/commit/13fd872f2a5e4946fa3b0fa813d13b3a04549623))
+
 ## [0.1.2](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.1...v0.1.2) (2026-07-03)
 
 
