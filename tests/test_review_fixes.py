@@ -145,10 +145,26 @@ def main():
     assert "tests/e2e-local.yml" in workflow, "CI must exercise local backup and restore"
 
     release_workflow = read(".github/workflows/release.yml")
+    release_please = read("release-please-config.json")
     assert "googleapis/release-please-action@v4" in release_workflow, (
         "release-please action v4 should be used until v5 startup failures are resolved"
     )
     assert "release-please-action v5 currently fails" in release_workflow
+    assert '"draft": true' in release_please, (
+        "release-please must leave releases mutable until artifacts are attached"
+    )
+    assert '"force-tag-creation": true' in release_please, (
+        "draft releases must still create tags for workflow checkout"
+    )
+    for snippet in (
+        "--json isDraft,isImmutable,assets",
+        "gh release create \"$tag\" \"$artifact\"",
+        "gh release upload \"$tag\" \"$artifact\"",
+        "gh release edit \"$tag\"",
+        "--draft=false",
+        "Release $tag already has $artifact",
+    ):
+        assert snippet in release_workflow, "missing release artifact flow: %s" % snippet
 
     validation_negative = read("tests/validation-negative.yml")
     assert "rescue:" not in validation_negative, (
@@ -245,7 +261,6 @@ def main():
     ):
         assert ignored in galaxy, "collection build must ignore %s" % ignored
 
-    release_please = read("release-please-config.json")
     assert '"include-component-in-tag": false' in release_please, (
         "release tags must be plain vX.Y.Z tags for the publish workflow"
     )

@@ -25,8 +25,10 @@ so release-please can choose the next version:
   releases, and breaking changes create major releases.
 
 To publish, merge the release-please PR. The release workflow creates the tag and
-GitHub Release, builds the collection, attaches the tarball to the release, and
-publishes it to Ansible Galaxy.
+draft GitHub Release, builds the collection, attaches the tarball, publishes the
+GitHub Release, and publishes it to Ansible Galaxy.
 
-If publishing fails after the release is created, rerun the `Release` workflow
-manually with the existing tag.
+If publishing fails after the GitHub Release is published with its tarball,
+rerun the `Release` workflow manually with the existing tag. If a published
+immutable release is missing the tarball, delete only the GitHub Release, keep
+the tag, then rerun the workflow with that tag.

@@ -114,15 +114,80 @@ jobs:
           uv run ansible-galaxy collection build --force
           test -f "$artifact"
 
-      - name: Upload release artifact
+      - name: Prepare release notes
+        if: ${{ steps.release_tag.outputs.publish == 'true' }}
+        id: release_notes
+        run: |
+          tag="${{ steps.release_tag.outputs.tag }}"
+          version="${{ steps.version.outputs.version }}"
+          notes="$RUNNER_TEMP/release-notes.md"
+          awk -v version="$version" '
+            $0 ~ "^## \\[" version "\\]" { in_section=1; next }
+            in_section && /^## / { exit }
+            in_section { print }
+          ' CHANGELOG.md > "$notes"
+
+          if [ ! -s "$notes" ]; then
+            printf 'Release %s\n' "$tag" > "$notes"
+          fi
+
+          echo "path=$notes" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure release artifact
         if: ${{ steps.release_tag.outputs.publish == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-        run: >-
-          gh release upload "${{ steps.release_tag.outputs.tag }}"
-          "${{ steps.version.outputs.artifact }}"
-          --repo "$GITHUB_REPOSITORY"
-          --clobber
+        run: |
+          tag="${{ steps.release_tag.outputs.tag }}"
+          artifact="${{ steps.version.outputs.artifact }}"
+          notes="${{ steps.release_notes.outputs.path }}"
+          release_json="$RUNNER_TEMP/release.json"
+          release_state="missing"
+          asset_present="false"
+          release_filter='
+            if .isDraft then "draft"
+            elif .isImmutable then "immutable"
+            else "published"
+            end
+          '
+          asset_filter='any(.assets[]?; .name == $artifact)'
+
+          if gh release view "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isImmutable,assets > "$release_json"; then
+            release_state="$(jq -r "$release_filter" "$release_json")"
+            asset_present="$(jq -r --arg artifact "$artifact" \
+              "$asset_filter" "$release_json")"
+          fi
+
+          case "$release_state" in
+            missing)
+              gh release create "$tag" "$artifact" \
+                --repo "$GITHUB_REPOSITORY" \
+                --verify-tag \
+                --title "$tag" \
+                --notes-file "$notes"
+              ;;
+            draft)
+              gh release upload "$tag" "$artifact" \
+                --repo "$GITHUB_REPOSITORY" \
+                --clobber
+              gh release edit "$tag" \
+                --repo "$GITHUB_REPOSITORY" \
+                --draft=false
+              ;;
+            immutable|published)
+              if [ "$asset_present" = "true" ]; then
+                echo "Release $tag already has $artifact"
+              else
+                echo "::error::Release $tag is already published"
+                echo "::error::Missing asset: $artifact"
+                echo "::error::Delete only the GitHub Release, keep the tag"
+                echo "::error::then rerun this workflow"
+                exit 1
+              fi
+              ;;
+          esac
 
       - name: Check Galaxy token
         if: ${{ steps.release_tag.outputs.publish == 'true' }}
