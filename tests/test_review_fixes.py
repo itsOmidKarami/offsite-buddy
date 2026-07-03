@@ -229,7 +229,14 @@ def main():
     )
 
     galaxy = read("galaxy.yml")
-    for ignored in (".venv", ".uv-cache", "*.tar.gz", "**/.DS_Store"):
+    for ignored in (
+        ".venv",
+        ".uv-cache",
+        "*.tar.gz",
+        "**/.DS_Store",
+        ".release-please-manifest.json",
+        "release-please-config.json",
+    ):
         assert ignored in galaxy, "collection build must ignore %s" % ignored
 
     contributing = read("CONTRIBUTING.md")
