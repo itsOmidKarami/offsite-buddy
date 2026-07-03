@@ -252,6 +252,12 @@ def main():
         "internal .superpowers report should not be tracked"
     )
 
+    for role_dir in (ROOT / "roles").iterdir():
+        if role_dir.is_dir():
+            assert (role_dir / "README.md").exists(), (
+                "Galaxy import requires role README: %s" % role_dir.name
+            )
+
     galaxy = read("galaxy.yml")
     for ignored in (
         ".venv",
