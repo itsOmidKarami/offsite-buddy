@@ -125,6 +125,22 @@
           - >-
             client_yaml.services.restic.entrypoint == ['restic']
           - >-
+            client_yaml.services.tailscale.image ==
+            'tailscale/tailscale:stable'
+          - >-
+            client_yaml.services.tailscale.environment.TS_HOSTNAME ==
+            'offsitebuddy-client-photos'
+          - >-
+            client_yaml.services.tailscale.environment.TS_USERSPACE ==
+            'false'
+          - >-
+            client_yaml.services.restic.network_mode == 'service:tailscale'
+          - >-
+            client_yaml.services.tailscale.devices ==
+            ['/dev/net/tun:/dev/net/tun']
+          - >-
+            'NET_RAW' in client_yaml.services.tailscale.cap_add
+          - >-
             'curl -fsS' in (backup_script.content | b64decode)
           - >-
             'OnCalendar=weekly' in (check_timer.content | b64decode)

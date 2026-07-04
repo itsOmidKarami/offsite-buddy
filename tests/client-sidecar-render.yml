@@ -1,0 +1,80 @@
+---
+- name: Render client Tailscale sidecar
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    offsitebuddy_sidecar_base: >-
+      {{ playbook_dir | dirname }}/.ansible/tmp/client-sidecar-render
+    offsitebuddy_client_root: "{{ offsitebuddy_sidecar_base }}/jobs"
+    offsitebuddy_client_owner: "{{ lookup('pipe', 'id -un') }}"
+    offsitebuddy_client_group: "{{ lookup('pipe', 'id -gn') }}"
+    offsitebuddy_start_services: false
+    offsitebuddy_manage_systemd: false
+    offsitebuddy_client_jobs:
+      - name: photos_to_bob
+        repository: >-
+          rest:http://alice:test-rest-server-password@offsitebuddy-alice.example.ts.net:8000/
+        tailscale:
+          hostname: offsitebuddy-client-photos
+          auth_key: test-client-auth-key
+        password: test-restic-password
+        schedule: "03:30"
+        backup_paths:
+          - "{{ offsitebuddy_sidecar_base }}/source"
+  pre_tasks:
+    - name: Reset sidecar render workspace
+      ansible.builtin.file:
+        path: "{{ offsitebuddy_sidecar_base }}"
+        state: absent
+
+    - name: Create sidecar source path
+      ansible.builtin.file:
+        path: "{{ offsitebuddy_sidecar_base }}/source"
+        state: directory
+        mode: "0755"
+  roles:
+    - role: client
+  post_tasks:
+    - name: Read rendered client compose
+      ansible.builtin.slurp:
+        path: "{{ offsitebuddy_client_root }}/photos_to_bob/compose.yaml"
+      register: offsitebuddy_client_sidecar_compose
+
+    - name: Read rendered client environment
+      ansible.builtin.slurp:
+        path: "{{ offsitebuddy_client_root }}/photos_to_bob/.env"
+      register: offsitebuddy_client_sidecar_env
+
+    - name: Stat rendered tailscale state directory
+      ansible.builtin.stat:
+        path: "{{ offsitebuddy_client_root }}/photos_to_bob/tailscale-state"
+      register: offsitebuddy_client_sidecar_state
+
+    - name: Assert rendered client sidecar files
+      vars:
+        compose_yaml: >-
+          {{
+            offsitebuddy_client_sidecar_compose.content | b64decode | from_yaml
+          }}
+        env_text: "{{ offsitebuddy_client_sidecar_env.content | b64decode }}"
+      ansible.builtin.assert:
+        that:
+          - >-
+            compose_yaml.services.tailscale.image ==
+            'tailscale/tailscale:stable'
+          - >-
+            compose_yaml.services.tailscale.environment.TS_HOSTNAME ==
+            'offsitebuddy-client-photos'
+          - compose_yaml.services.tailscale.environment.TS_USERSPACE == 'false'
+          - compose_yaml.services.restic.network_mode == 'service:tailscale'
+          - compose_yaml.services.restic.depends_on == ['tailscale']
+          - >-
+            compose_yaml.services.tailscale.devices ==
+            ['/dev/net/tun:/dev/net/tun']
+          - "'NET_RAW' in compose_yaml.services.tailscale.cap_add"
+          - "'TS_AUTHKEY=test-client-auth-key' in env_text"
+          - offsitebuddy_client_sidecar_state.stat.isdir
+          - offsitebuddy_client_sidecar_state.stat.mode == '0700'

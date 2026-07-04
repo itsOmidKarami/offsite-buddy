@@ -117,8 +117,17 @@ def main():
     )
 
     getting_started = read("docs/getting-started.md").lower()
-    assert "tailscale must be running on the client host" in getting_started, (
-        "client Tailscale prerequisite must be explicit"
+    assert "client-side tailscale\n   sidecar" in getting_started, (
+        "client Tailscale sidecar setup must be explicit"
+    )
+    assert "untagged tailscale auth key" in getting_started, (
+        "client sidecar auth keys must work with cross-tailnet sharing"
+    )
+    assert "<hostname>.<server-tailnet>.ts.net" in getting_started, (
+        "cross-tailnet shares must use the shared machine FQDN"
+    )
+    assert "do not mutually share the client device" in getting_started, (
+        "Tailscale sharing should stay one-way for backup access"
     )
     assert "debian-family" in getting_started, "supported OS family must be explicit"
     assert "url-encoded" in getting_started, "REST URL credentials must be documented as URL-encoded"
@@ -141,6 +150,9 @@ def main():
     assert "actions/setup-python@v5" not in workflow
     assert "tests/validation-negative.yml" in workflow, (
         "CI must reject unsafe validation inputs"
+    )
+    assert "tests/client-sidecar-render.yml" in workflow, (
+        "CI must render the client Tailscale sidecar path"
     )
     assert "tests/e2e-local.yml" in workflow, "CI must exercise local backup and restore"
 
@@ -218,8 +230,25 @@ def main():
 
     client_compose = read("roles/client/templates/compose.yaml.j2")
     assert "type: bind" in client_compose, "client volumes should use long-form bind mounts"
+    for snippet in (
+        "image: \"{{ offsitebuddy_tailscale_image }}\"",
+        "TS_AUTHKEY: \"${TS_AUTHKEY}\"",
+        "TS_HOSTNAME: \"{{ job.tailscale.hostname }}\"",
+        "TS_USERSPACE: \"false\"",
+        "./tailscale-state:/var/lib/tailscale",
+        "/dev/net/tun:/dev/net/tun",
+        "NET_ADMIN",
+        "NET_RAW",
+        "network_mode: service:tailscale",
+    ):
+        assert snippet in client_compose, "missing client Tailscale sidecar: %s" % snippet
     assert "job.repository is match('^/')" in client_compose, (
         "local repository paths must be mounted for e2e backup/restore"
+    )
+
+    client_defaults = read("roles/client/defaults/main.yml")
+    assert "offsitebuddy_tailscale_image: tailscale/tailscale:stable" in client_defaults, (
+        "client role must provide its own Tailscale image default"
     )
 
     server_compose = read("roles/server/templates/compose.yaml.j2")
@@ -286,6 +315,7 @@ def main():
         "uv run molecule converge",
         "uv run molecule verify",
         "uv run ansible-playbook -i localhost, -c local tests/validation-negative.yml",
+        "uv run ansible-playbook -i localhost, -c local tests/client-sidecar-render.yml",
         "uv run ansible-playbook -i localhost, -c local tests/e2e-local.yml",
     ):
         assert command in contributing, "CONTRIBUTING missing %s" % command

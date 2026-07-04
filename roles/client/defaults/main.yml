@@ -1,6 +1,7 @@
 ---
 offsitebuddy_client_root: /etc/offsitebuddy/jobs
 offsitebuddy_restic_image: restic/restic:0.19.0
+offsitebuddy_tailscale_image: tailscale/tailscale:stable
 offsitebuddy_client_jobs: []
 offsitebuddy_start_services: true
 offsitebuddy_backup_randomized_delay_sec: 1800

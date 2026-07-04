@@ -21,6 +21,9 @@
       - name: photos_to_bob
         repository: >-
           rest:http://alice:test-rest-server-password@offsitebuddy-alice:8000/
+        tailscale:
+          hostname: offsitebuddy-client-photos
+          auth_key: test-client-auth-key
         password: test-restic-password
         init_if_missing: false
         run_initial_backup: false

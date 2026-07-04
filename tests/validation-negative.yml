@@ -23,6 +23,10 @@
     boolean_port_friend:
       rest_server:
         port: true
+    invalid_client_tailscale_job:
+      tailscale:
+        hostname: Invalid_Client_Name
+        auth_key: ""
     root_quota_item:
       path: /
   tasks:
@@ -65,6 +69,21 @@
               boolean_port_friend.rest_server.port | string is match('^[0-9]+$')
             )
         fail_msg: Boolean rest-server port guard did not reject true.
+
+    - name: Assert invalid client tailscale config is rejected
+      ansible.builtin.assert:
+        that:
+          - invalid_client_tailscale_job.tailscale is mapping
+          - >-
+            not (
+              invalid_client_tailscale_job.tailscale.hostname is string and
+              invalid_client_tailscale_job.tailscale.hostname | regex_search(
+                '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+              ) is not none and
+              invalid_client_tailscale_job.tailscale.auth_key is string and
+              invalid_client_tailscale_job.tailscale.auth_key | length > 0
+            )
+        fail_msg: Invalid client Tailscale config guard did not reject input.
 
     - name: Assert root quota path is rejected
       ansible.builtin.assert:
