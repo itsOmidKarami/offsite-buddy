@@ -20,10 +20,18 @@ This repo uses release-please. Because the repository uses squash merges, the PR
 title becomes the commit on `main`. Use conventional commit prefixes in PR titles
 so release-please can choose the next version:
 
-- While version is `0.x`, `fix:` and `feat:` create patch releases, and
-  breaking changes create minor releases.
+- For user-facing or package changes, use `fix:` or `feat:` in the PR title.
+- For non-release changes, use `docs:`, `test:`, `ci:`, `chore:`, or
+  `refactor:`.
+- While version is `0.x`, `fix:`, `feat:`, and `perf:` create patch releases,
+  and breaking changes create minor releases.
 - From `1.0.0` onward, `fix:` creates patch releases, `feat:` creates minor
   releases, and breaking changes create major releases.
+
+CI rejects PR titles that do not start with one of those conventional prefixes.
+If release-worthy changes already merged without a release prefix, open a tiny
+follow-up PR titled `fix: release <summary>` or `feat: release <summary>` and
+merge it through the normal flow.
 
 To publish, merge the release-please PR. The release workflow creates the tag and
 draft GitHub Release, builds the collection, attaches the tarball, publishes the

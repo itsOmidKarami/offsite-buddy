@@ -161,6 +161,13 @@ def main():
     assert "MOLECULE_GLOB: molecule/*/molecule.yml" in workflow, (
         "CI should avoid Molecule collection migration warnings"
     )
+    for snippet in (
+        "Validate PR title",
+        "${{ github.event.pull_request.title }}",
+        "feat|fix|perf|revert|docs|test|ci|chore|refactor",
+        "PR title must be a conventional commit",
+    ):
+        assert snippet in workflow, "missing PR title release gate: %s" % snippet
     assert "uv run molecule converge --no-report" in workflow, (
         "Molecule converge should avoid end-of-run warning summaries"
     )
@@ -333,6 +340,13 @@ def main():
     assert "ansible.posix" in requirements_dev, (
         "Molecule Docker create uses ansible.posix.synchronize"
     )
+    for release_doc in (contributing, pr_template):
+        assert "release-worthy" in release_doc, (
+            "release docs should distinguish release-worthy PR titles"
+        )
+        assert "fix:" in release_doc and "feat:" in release_doc, (
+            "release docs should name release-triggering prefixes"
+        )
     for command in (
         "uv run --locked pre-commit run --all-files",
         "uv run molecule converge",
