@@ -5,6 +5,7 @@
   gather_facts: false
   become: false
   vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
     offsitebuddy_e2e_base: >-
       {{ playbook_dir | dirname }}/.ansible/tmp/e2e-local
     offsitebuddy_e2e_source: "{{ offsitebuddy_e2e_base }}/source"

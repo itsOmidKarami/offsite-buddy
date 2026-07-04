@@ -1,7 +1,31 @@
 ---
 services:
+{% if job.tailscale is defined %}
+  tailscale:
+    image: "{{ offsitebuddy_tailscale_image }}"
+    hostname: "{{ job.tailscale.hostname }}"
+    environment:
+      TS_AUTHKEY: "${TS_AUTHKEY}"
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_HOSTNAME: "{{ job.tailscale.hostname }}"
+      TS_USERSPACE: "false"
+    volumes:
+      - ./tailscale-state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: unless-stopped
+
+{% endif %}
   restic:
     image: "{{ offsitebuddy_restic_image }}"
+{% if job.tailscale is defined %}
+    network_mode: service:tailscale
+    depends_on:
+      - tailscale
+{% endif %}
     env_file:
       - .env
     volumes:

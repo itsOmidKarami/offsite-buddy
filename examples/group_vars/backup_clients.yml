@@ -1,11 +1,15 @@
 ---
 offsitebuddy_restic_image: restic/restic:0.19.0
+offsitebuddy_server_tailnet_name: bob-tailnet
 
 offsitebuddy_client_jobs:
   - name: photos_to_bob
     # Credentials embedded in REST URLs must be URL-encoded.
     repository: "rest:http://alice:{{ vault_rest_server_password_alice }}\
-      @offsitebuddy-alice:8000/"
+      @offsitebuddy-alice.{{ offsitebuddy_server_tailnet_name }}.ts.net:8000/"
+    tailscale:
+      hostname: offsitebuddy-client-photos
+      auth_key: "{{ vault_tailscale_auth_key_photos_to_bob }}"
     password: "{{ vault_restic_repo_password }}"
     init_if_missing: true
     run_initial_backup: true

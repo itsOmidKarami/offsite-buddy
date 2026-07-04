@@ -43,6 +43,27 @@
       - >-
         item.repository is not match('^/') or
         item.repository is not match('^.+/$')
+      - item.tailscale is not defined or item.tailscale is mapping
+      - >-
+        item.tailscale is not defined or
+        item.tailscale.hostname is defined
+      - >-
+        item.tailscale is not defined or
+        item.tailscale.hostname is string
+      - >-
+        item.tailscale is not defined or
+        item.tailscale.hostname | regex_search(
+          '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+        ) is not none
+      - >-
+        item.tailscale is not defined or
+        item.tailscale.auth_key is defined
+      - >-
+        item.tailscale is not defined or
+        item.tailscale.auth_key is string
+      - >-
+        item.tailscale is not defined or
+        item.tailscale.auth_key | length > 0
       - item.password is defined
       - item.password is string
       - item.password | length > 0
@@ -99,8 +120,9 @@
       supported repository scheme or absolute local repository, absolute
       backup_paths without root, trailing slash, or traversal segments,
       optional absolute excludes without root, trailing slash, or traversal
-      segments or globs, and an optional check mapping. REST URLs with embedded
-      credentials must already be url-encoded.
+      segments or globs, optional valid Tailscale sidecar configuration, and
+      an optional check mapping. REST URLs with embedded credentials must
+      already be url-encoded.
   loop: "{{ offsitebuddy_client_jobs }}"
   loop_control:
     label: "{{ item.name | default('missing-name') }}"
@@ -124,6 +146,23 @@
         | length == offsitebuddy_client_jobs | length
     fail_msg: >-
       offsitebuddy_client_jobs names must be unique.
+
+- name: Validate client Tailscale hostnames are unique
+  vars:
+    offsitebuddy_client_tailscale_hostnames: >-
+      {{
+        offsitebuddy_client_jobs
+        | selectattr('tailscale', 'defined')
+        | map(attribute='tailscale.hostname')
+        | list
+      }}
+  ansible.builtin.assert:
+    that:
+      - >-
+        offsitebuddy_client_tailscale_hostnames | unique | length
+        == offsitebuddy_client_tailscale_hostnames | length
+    fail_msg: >-
+      offsitebuddy_client_jobs Tailscale hostnames must be unique.
 
 - name: Validate local repository paths do not overlap managed client root
   ansible.builtin.assert:

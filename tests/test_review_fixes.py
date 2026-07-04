@@ -117,8 +117,17 @@ def main():
     )
 
     getting_started = read("docs/getting-started.md").lower()
-    assert "tailscale must be running on the client host" in getting_started, (
-        "client Tailscale prerequisite must be explicit"
+    assert "client-side tailscale\n   sidecar" in getting_started, (
+        "client Tailscale sidecar setup must be explicit"
+    )
+    assert "untagged tailscale auth key" in getting_started, (
+        "client sidecar auth keys must work with cross-tailnet sharing"
+    )
+    assert "<hostname>.<server-tailnet>.ts.net" in getting_started, (
+        "cross-tailnet shares must use the shared machine FQDN"
+    )
+    assert "do not mutually share the client device" in getting_started, (
+        "Tailscale sharing should stay one-way for backup access"
     )
     assert "debian-family" in getting_started, "supported OS family must be explicit"
     assert "url-encoded" in getting_started, "REST URL credentials must be documented as URL-encoded"
@@ -142,7 +151,28 @@ def main():
     assert "tests/validation-negative.yml" in workflow, (
         "CI must reject unsafe validation inputs"
     )
+    assert "tests/client-sidecar-render.yml" in workflow, (
+        "CI must render the client Tailscale sidecar path"
+    )
     assert "tests/e2e-local.yml" in workflow, "CI must exercise local backup and restore"
+    assert "git config --global init.defaultBranch main" in workflow, (
+        "CI checkout should avoid git init default-branch warnings"
+    )
+    assert "MOLECULE_GLOB: molecule/*/molecule.yml" in workflow, (
+        "CI should avoid Molecule collection migration warnings"
+    )
+    assert "uv run molecule converge --no-report" in workflow, (
+        "Molecule converge should avoid end-of-run warning summaries"
+    )
+    assert "uv run molecule verify --no-report" in workflow, (
+        "Molecule verify should avoid end-of-run warning summaries"
+    )
+    assert "printf '%s%s  Driver docker does not provide a schema.' WARN ING" in workflow, (
+        "CI should filter Molecule docker plugin schema warning noise"
+    )
+    assert 'grep -v -F "$molecule_schema_filter"' in workflow, (
+        "CI should keep the literal warning text out of echoed commands"
+    )
 
     release_workflow = read(".github/workflows/release.yml")
     release_please = read("release-please-config.json")
@@ -218,8 +248,25 @@ def main():
 
     client_compose = read("roles/client/templates/compose.yaml.j2")
     assert "type: bind" in client_compose, "client volumes should use long-form bind mounts"
+    for snippet in (
+        "image: \"{{ offsitebuddy_tailscale_image }}\"",
+        "TS_AUTHKEY: \"${TS_AUTHKEY}\"",
+        "TS_HOSTNAME: \"{{ job.tailscale.hostname }}\"",
+        "TS_USERSPACE: \"false\"",
+        "./tailscale-state:/var/lib/tailscale",
+        "/dev/net/tun:/dev/net/tun",
+        "NET_ADMIN",
+        "NET_RAW",
+        "network_mode: service:tailscale",
+    ):
+        assert snippet in client_compose, "missing client Tailscale sidecar: %s" % snippet
     assert "job.repository is match('^/')" in client_compose, (
         "local repository paths must be mounted for e2e backup/restore"
+    )
+
+    client_defaults = read("roles/client/defaults/main.yml")
+    assert "offsitebuddy_tailscale_image: tailscale/tailscale:stable" in client_defaults, (
+        "client role must provide its own Tailscale image default"
     )
 
     server_compose = read("roles/server/templates/compose.yaml.j2")
@@ -239,6 +286,7 @@ def main():
 
     e2e = read("tests/e2e-local.yml")
     for snippet in (
+        "ansible_python_interpreter",
         "init_if_missing: true",
         "run_initial_backup: true",
         "snapshots.sh",
@@ -281,11 +329,16 @@ def main():
 
     contributing = read("CONTRIBUTING.md")
     pr_template = read(".github/pull_request_template.md")
+    requirements_dev = read("requirements-dev.yml")
+    assert "ansible.posix" in requirements_dev, (
+        "Molecule Docker create uses ansible.posix.synchronize"
+    )
     for command in (
         "uv run --locked pre-commit run --all-files",
         "uv run molecule converge",
         "uv run molecule verify",
         "uv run ansible-playbook -i localhost, -c local tests/validation-negative.yml",
+        "uv run ansible-playbook -i localhost, -c local tests/client-sidecar-render.yml",
         "uv run ansible-playbook -i localhost, -c local tests/e2e-local.yml",
     ):
         assert command in contributing, "CONTRIBUTING missing %s" % command
