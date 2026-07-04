@@ -13,7 +13,11 @@ permissions:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    env:
+      MOLECULE_GLOB: molecule/*/molecule.yml
     steps:
+      - name: Configure git defaults
+        run: git config --global init.defaultBranch main
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
@@ -27,9 +31,15 @@ jobs:
       - name: Run pre-commit checks
         run: uv run --locked pre-commit run --all-files
       - name: Run Molecule converge
-        run: uv run molecule converge
+        run: >-
+          uv run molecule converge --no-report
+          2> >(grep -v -F
+          "WARNING  Driver docker does not provide a schema." >&2)
       - name: Run Molecule verify
-        run: uv run molecule verify
+        run: >-
+          uv run molecule verify --no-report
+          2> >(grep -v -F
+          "WARNING  Driver docker does not provide a schema." >&2)
       - name: Run negative validation checks
         run: >-
           uv run ansible-playbook -i localhost, -c local

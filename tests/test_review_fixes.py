@@ -155,6 +155,21 @@ def main():
         "CI must render the client Tailscale sidecar path"
     )
     assert "tests/e2e-local.yml" in workflow, "CI must exercise local backup and restore"
+    assert "git config --global init.defaultBranch main" in workflow, (
+        "CI checkout should avoid git init default-branch warnings"
+    )
+    assert "MOLECULE_GLOB: molecule/*/molecule.yml" in workflow, (
+        "CI should avoid Molecule collection migration warnings"
+    )
+    assert "uv run molecule converge --no-report" in workflow, (
+        "Molecule converge should avoid end-of-run warning summaries"
+    )
+    assert "uv run molecule verify --no-report" in workflow, (
+        "Molecule verify should avoid end-of-run warning summaries"
+    )
+    assert "Driver docker does not provide a schema" in workflow, (
+        "CI should filter Molecule docker plugin schema warning noise"
+    )
 
     release_workflow = read(".github/workflows/release.yml")
     release_please = read("release-please-config.json")
@@ -268,6 +283,7 @@ def main():
 
     e2e = read("tests/e2e-local.yml")
     for snippet in (
+        "ansible_python_interpreter",
         "init_if_missing: true",
         "run_initial_backup: true",
         "snapshots.sh",

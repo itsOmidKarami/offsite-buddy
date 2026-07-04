@@ -17,3 +17,9 @@ provisioner:
       remote_tmp: /tmp
 verifier:
   name: ansible
+scenario:
+  converge_sequence:
+    - create
+    - converge
+  verify_sequence:
+    - verify
