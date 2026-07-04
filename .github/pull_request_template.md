@@ -2,8 +2,9 @@
 
 Release impact:
 
-- [ ] PR title uses `fix:`, `feat:`, `feat!:`, `docs:`, `chore:`, or another
-      conventional commit prefix
+- [ ] PR title uses a conventional prefix:
+      `fix:`/`feat:`/`perf:` for release-worthy changes, or
+      `docs:`/`test:`/`ci:`/`chore:`/`refactor:` otherwise
 
 ## Validation
 

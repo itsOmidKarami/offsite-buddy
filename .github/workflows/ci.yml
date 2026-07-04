@@ -16,6 +16,20 @@ jobs:
     env:
       MOLECULE_GLOB: molecule/*/molecule.yml
     steps:
+      - name: Validate PR title
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          type_pattern='feat|fix|perf|revert|docs|test|ci|chore|refactor'
+          title_pattern="^(${type_pattern})(\([a-z0-9._/-]+\))?!?: .+"
+          if [[ ! "$PR_TITLE" =~ $title_pattern ]]; then
+            marker="$(printf '::%s::' error)"
+            echo "${marker}PR title must be a conventional commit."
+            echo "${marker}Use fix:/feat:/perf: for release-worthy changes."
+            echo "${marker}Use docs:/test:/ci:/chore:/refactor: otherwise."
+            exit 1
+          fi
       - name: Configure git defaults
         run: git config --global init.defaultBranch main
       - uses: actions/checkout@v7
