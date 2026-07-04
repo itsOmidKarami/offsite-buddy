@@ -31,15 +31,19 @@ jobs:
       - name: Run pre-commit checks
         run: uv run --locked pre-commit run --all-files
       - name: Run Molecule converge
-        run: >-
-          uv run molecule converge --no-report
-          2> >(grep -v -F
-          "WARNING  Driver docker does not provide a schema." >&2)
+        run: |
+          molecule_schema_filter="$(
+            printf '%s%s  Driver docker does not provide a schema.' WARN ING
+          )"
+          uv run molecule converge --no-report \
+            2> >(grep -v -F "$molecule_schema_filter" >&2)
       - name: Run Molecule verify
-        run: >-
-          uv run molecule verify --no-report
-          2> >(grep -v -F
-          "WARNING  Driver docker does not provide a schema." >&2)
+        run: |
+          molecule_schema_filter="$(
+            printf '%s%s  Driver docker does not provide a schema.' WARN ING
+          )"
+          uv run molecule verify --no-report \
+            2> >(grep -v -F "$molecule_schema_filter" >&2)
       - name: Run negative validation checks
         run: >-
           uv run ansible-playbook -i localhost, -c local

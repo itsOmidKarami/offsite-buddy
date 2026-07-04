@@ -167,8 +167,11 @@ def main():
     assert "uv run molecule verify --no-report" in workflow, (
         "Molecule verify should avoid end-of-run warning summaries"
     )
-    assert "Driver docker does not provide a schema" in workflow, (
+    assert "printf '%s%s  Driver docker does not provide a schema.' WARN ING" in workflow, (
         "CI should filter Molecule docker plugin schema warning noise"
+    )
+    assert 'grep -v -F "$molecule_schema_filter"' in workflow, (
+        "CI should keep the literal warning text out of echoed commands"
     )
 
     release_workflow = read(".github/workflows/release.yml")
