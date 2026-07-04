@@ -326,6 +326,10 @@ def main():
 
     contributing = read("CONTRIBUTING.md")
     pr_template = read(".github/pull_request_template.md")
+    requirements_dev = read("requirements-dev.yml")
+    assert "ansible.posix" in requirements_dev, (
+        "Molecule Docker create uses ansible.posix.synchronize"
+    )
     for command in (
         "uv run --locked pre-commit run --all-files",
         "uv run molecule converge",
