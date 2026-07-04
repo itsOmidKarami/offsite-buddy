@@ -31,7 +31,8 @@ so release-please can choose the next version:
 CI rejects PR titles that do not start with one of those conventional prefixes.
 If release-worthy changes already merged without a release prefix, open a tiny
 follow-up PR titled `fix: release <summary>` or `feat: release <summary>` and
-merge it through the normal flow.
+merge it through the normal flow. Keep that follow-up PR small; it exists only
+to put the missed release summary into release-please history.
 
 To publish, merge the release-please PR. The release workflow creates the tag and
 draft GitHub Release, builds the collection, attaches the tarball, publishes the
