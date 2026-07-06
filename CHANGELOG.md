@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.3...v0.1.4) (2026-07-04)
+
+
+### Bug Fixes
+
+* release client tailscale sidecar support ([4f0529c](https://github.com/itsOmidKarami/offsite-buddy/commit/4f0529c58585ad8f149e0e6a2c9ddda2da348802))
+
 ## [0.1.3](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.2...v0.1.3) (2026-07-03)
 
 
