@@ -29,8 +29,6 @@ jobs:
             exit 1
           fi
 
-      # release-please-action v5 currently fails at workflow startup
-      # in this repo.
       - uses: googleapis/release-please-action@v5
         if: ${{ github.event_name == 'push' }}
         id: release

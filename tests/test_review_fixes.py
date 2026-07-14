@@ -183,10 +183,10 @@ def main():
 
     release_workflow = read(".github/workflows/release.yml")
     release_please = read("release-please-config.json")
-    assert "googleapis/release-please-action@v4" in release_workflow, (
-        "release-please action v4 should be used until v5 startup failures are resolved"
+    assert "googleapis/release-please-action@v5" in release_workflow, (
+        "release-please action should use the supported Node 24 runtime"
     )
-    assert "release-please-action v5 currently fails" in release_workflow
+    assert "googleapis/release-please-action@v4" not in release_workflow
     assert '"draft": true' in release_please, (
         "release-please must leave releases mutable until artifacts are attached"
     )
