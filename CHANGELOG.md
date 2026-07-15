@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.4...v0.1.5) (2026-07-15)
+
+
+### Bug Fixes
+
+* harden runtime validation and convergence ([#19](https://github.com/itsOmidKarami/offsite-buddy/issues/19)) ([0753b15](https://github.com/itsOmidKarami/offsite-buddy/commit/0753b15a326d29d87ec4798008d8a6ea34fd2174))
+
 ## [0.1.4](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.3...v0.1.4) (2026-07-04)
 
 
