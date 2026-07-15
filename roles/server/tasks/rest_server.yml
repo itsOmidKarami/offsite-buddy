@@ -1,42 +1,42 @@
 ---
 - name: Ensure friend stack directories exist
   ansible.builtin.file:
-    path: "{{ offsitebuddy_server_root }}/friends/{{ friend.name }}"
+    path: "{{ offsitebuddy_server_root }}/friends/{{ friend_name }}"
     state: directory
     owner: root
     group: root
     mode: "0755"
-  loop: "{{ offsitebuddy_friends }}"
+  loop: "{{ offsitebuddy_friends | map(attribute='name') | list }}"
   loop_control:
-    loop_var: friend
-    label: "{{ friend.name }}"
+    loop_var: friend_name
+    label: "{{ friend_name }}"
 
 - name: Ensure friend tailscale state directories exist
   ansible.builtin.file:
     path: >-
-      {{ offsitebuddy_server_root }}/friends/{{ friend.name }}/tailscale-state
+      {{ offsitebuddy_server_root }}/friends/{{ friend_name }}/tailscale-state
     state: directory
     owner: root
     group: root
     mode: "0700"
-  loop: "{{ offsitebuddy_friends }}"
+  loop: "{{ offsitebuddy_friends | map(attribute='name') | list }}"
   loop_control:
-    loop_var: friend
-    label: "{{ friend.name }}"
+    loop_var: friend_name
+    label: "{{ friend_name }}"
 
 - name: Mark managed friend stack directories
   ansible.builtin.copy:
     content: "offsitebuddy\n"
     dest: >-
-      {{ offsitebuddy_server_root }}/friends/{{ friend.name
+      {{ offsitebuddy_server_root }}/friends/{{ friend_name
       }}/.offsitebuddy-managed
     owner: root
     group: root
     mode: "0644"
-  loop: "{{ offsitebuddy_friends }}"
+  loop: "{{ offsitebuddy_friends | map(attribute='name') | list }}"
   loop_control:
-    loop_var: friend
-    label: "{{ friend.name }}"
+    loop_var: friend_name
+    label: "{{ friend_name }}"
 
 - name: Write per-friend Tailscale environment file
   ansible.builtin.template:
@@ -48,10 +48,8 @@
   loop: "{{ offsitebuddy_friends }}"
   loop_control:
     loop_var: friend
-    index_var: friend_index
     label: "{{ friend.name }}"
   no_log: true
-  register: rest_server_env_render
 
 - name: Ensure passlib is installed for htpasswd
   ansible.builtin.apt:
@@ -72,10 +70,8 @@
   loop: "{{ offsitebuddy_friends }}"
   loop_control:
     loop_var: friend
-    index_var: friend_index
     label: "{{ friend.name }}"
   no_log: true
-  register: rest_server_htpasswd_render
 
 - name: Write per-friend Compose file
   ansible.builtin.template:
@@ -88,37 +84,20 @@
   loop: "{{ offsitebuddy_friends }}"
   loop_control:
     loop_var: friend
-    index_var: friend_index
     label: "{{ friend.name }}"
-  register: rest_server_compose_render
+  no_log: true
 
-- name: Start per-friend server stacks
+- name: Converge per-friend server stacks
   community.docker.docker_compose_v2:
     project_src: >-
-      {{ offsitebuddy_server_root }}/friends/{{ friend.name }}
+      {{ offsitebuddy_server_root }}/friends/{{ friend_name }}
     state: present
     pull: missing
-  loop: "{{ offsitebuddy_friends }}"
+  loop: "{{ offsitebuddy_friends | map(attribute='name') | list }}"
   loop_control:
-    loop_var: friend
-    label: "{{ friend.name }}"
+    loop_var: friend_name
+    label: "{{ friend_name }}"
   when: offsitebuddy_start_services | bool
-
-- name: Restart changed friend server stacks
-  community.docker.docker_compose_v2:
-    project_src: "{{ offsitebuddy_server_root }}/friends/{{ friend.name }}"
-    state: restarted
-  loop: "{{ offsitebuddy_friends }}"
-  loop_control:
-    loop_var: friend
-    index_var: friend_index
-    label: "{{ friend.name }}"
-  when:
-    - offsitebuddy_start_services | bool
-    - >-
-      rest_server_env_render.results[friend_index].changed or
-      rest_server_htpasswd_render.results[friend_index].changed or
-      rest_server_compose_render.results[friend_index].changed
 
 - name: Find managed friend stack markers
   ansible.builtin.find:

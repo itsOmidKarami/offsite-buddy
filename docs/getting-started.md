@@ -14,12 +14,16 @@
    Share only the server-side device; do not mutually share the client device
    for this backup path.
 10. Configure `offsitebuddy_client_jobs` on the client. For cross-tailnet
-    shares, use the shared machine FQDN
-    `<hostname>.<server-tailnet>.ts.net`, not the short hostname. If the
-    repository URL embeds credentials, URL-encoded username and password values
-    are required. Add `tailscale.hostname` and `tailscale.auth_key` to give the
-    backup job its own Tailscale identity. Excludes must be concrete absolute
-    paths, not globs.
+    shares, start with the shared machine FQDN
+    `<hostname>.<server-tailnet>.ts.net`, not the short hostname. Some Docker
+    hosts keep the one-shot restic container on Docker's `127.0.0.11` embedded
+    DNS resolver, where MagicDNS names may not resolve. If restic reports
+    `no such host`, use the server sidecar's Tailnet IP in `repository`; find it
+    in the Tailscale admin console or with `tailscale ip` inside that sidecar.
+    If the repository URL embeds credentials, URL-encoded username and password
+    values are required. Add `tailscale.hostname` and `tailscale.auth_key` to
+    give the backup job its own Tailscale identity. Excludes must be concrete
+    absolute paths, not globs.
 11. Run `playbooks/client.yml`.
 12. Run a restore test.
 

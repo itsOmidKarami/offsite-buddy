@@ -10,6 +10,7 @@
   loop_control:
     loop_var: job
     label: "{{ job.name }}"
+  no_log: true
   notify: Reload systemd
 
 - name: Write backup systemd timers
@@ -23,6 +24,7 @@
   loop_control:
     loop_var: job
     label: "{{ job.name }}"
+  no_log: true
   notify: Reload systemd
 
 - name: Write check systemd services
@@ -37,6 +39,7 @@
     loop_var: job
     label: "{{ job.name }}"
   when: (job.check | default({})).enabled | default(true) | bool
+  no_log: true
   notify: Reload systemd
 
 - name: Write check systemd timers
@@ -51,6 +54,7 @@
     loop_var: job
     label: "{{ job.name }}"
   when: (job.check | default({})).enabled | default(true) | bool
+  no_log: true
   notify: Reload systemd
 
 - name: Stat stale check timer files
@@ -61,6 +65,7 @@
     loop_var: job
     label: "{{ job.name }}"
   register: stale_check_timer_stats
+  no_log: true
 
 - name: Disable stale check timers
   ansible.builtin.systemd:
@@ -80,6 +85,7 @@
     - offsitebuddy_start_services | bool
     - not ((item.0.check | default({})).enabled | default(true) | bool)
     - item.1.stat.exists
+  no_log: true
 
 - name: Remove stale check unit files
   ansible.builtin.file:
@@ -92,6 +98,7 @@
   when:
     - offsitebuddy_start_services | bool
     - not ((item.0.check | default({})).enabled | default(true) | bool)
+  no_log: true
   notify: Reload systemd
 
 - name: Find managed client job markers
@@ -204,14 +211,14 @@
 
 - name: Enable backup timers
   ansible.builtin.systemd:
-    name: "offsitebuddy-backup-{{ job.name }}.timer"
+    name: "offsitebuddy-backup-{{ job_name }}.timer"
     enabled: true
     state: started
     daemon_reload: true
-  loop: "{{ offsitebuddy_client_jobs }}"
+  loop: "{{ offsitebuddy_client_jobs | map(attribute='name') | list }}"
   loop_control:
-    loop_var: job
-    label: "{{ job.name }}"
+    loop_var: job_name
+    label: "{{ job_name }}"
   when: offsitebuddy_start_services | bool
 
 - name: Enable check timers
@@ -227,3 +234,4 @@
   when:
     - offsitebuddy_start_services | bool
     - (job.check | default({})).enabled | default(true) | bool
+  no_log: true

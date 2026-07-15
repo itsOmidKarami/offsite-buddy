@@ -214,18 +214,32 @@
   loop_control:
     label: "{{ item.0.name }} {{ item.1 }}"
   register: offsitebuddy_client_backup_path_stats
+  no_log: true
 
 - name: Assert client backup paths exist and are directories
+  vars:
+    offsitebuddy_client_backup_path_checks: >-
+      {{
+        offsitebuddy_client_backup_path_stats.results
+        | map(attribute='item.0.name')
+        | zip(
+            offsitebuddy_client_backup_path_stats.results
+            | map(attribute='item.1'),
+            offsitebuddy_client_backup_path_stats.results
+            | map(attribute='stat')
+          )
+        | list
+      }}
   ansible.builtin.assert:
     that:
-      - item.stat.exists
-      - item.stat.isdir
+      - item.2.exists
+      - item.2.isdir
     fail_msg: >-
-      Backup path {{ item.item.1 }} for job {{ item.item.0.name }}
-      must exist and be a directory.
-  loop: "{{ offsitebuddy_client_backup_path_stats.results }}"
+      Backup path {{ item.1 }} for job {{ item.0 }} must exist and be a
+      directory.
+  loop: "{{ offsitebuddy_client_backup_path_checks }}"
   loop_control:
-    label: "{{ item.item.0.name }} {{ item.item.1 }}"
+    label: "{{ item.0 }} {{ item.1 }}"
 
 - name: Validate local repository paths do not overlap backup paths
   ansible.builtin.assert:
@@ -284,3 +298,4 @@
     - offsitebuddy_systemd_analyze_check.rc == 0
     - (item.check | default({})).enabled | default(true) | bool
   changed_when: false
+  no_log: true
