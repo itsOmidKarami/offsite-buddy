@@ -1,11 +1,60 @@
 #!/usr/bin/env python3
+import os
+import subprocess
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def read(path):
     return (ROOT / path).read_text()
+
+
+def assert_secret_loops_are_redacted(path, collection_variable):
+    for task in yaml.safe_load(read(path)):
+        loop = str(task.get("loop", ""))
+        if collection_variable not in loop:
+            continue
+        safe_name_projection = "map(attribute='name')" in loop
+        assert task.get("no_log") is True or safe_name_projection, (
+            "%s loops over %s without no_log or a safe name projection: %s"
+            % (path, collection_variable, task["name"])
+        )
+
+
+def assert_client_validation_output_is_redacted():
+    env = os.environ.copy()
+    env["ANSIBLE_LOCAL_TEMP"] = str(ROOT / ".ansible/tmp")
+    result = subprocess.run(
+        [
+            "ansible-playbook",
+            "-i",
+            "localhost,",
+            "-c",
+            "local",
+            "tests/secret-redaction.yml",
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode != 0, "secret redaction play must fail on the missing path"
+    assert "secret_output" in output, "failure must retain the safe job name"
+    assert "missing-source" in output, "failure must retain the safe backup path"
+    for secret in (
+        "output-rest-password",
+        "output-restic-password",
+        "output-tailscale-auth-key",
+        "repository:",
+        "password:",
+        "auth_key:",
+    ):
+        assert secret not in output, "Ansible output leaked %s" % secret
 
 
 def main():
@@ -37,8 +86,8 @@ def main():
         "map(attribute='name')",
         "unique",
         "offsitebuddy_client_backup_path_stats",
-        "item.stat.exists",
-        "item.stat.isdir",
+        "item.2.exists",
+        "item.2.isdir",
         "systemd-analyze calendar",
         "url-encoded",
         "offsitebuddy_client_supported_repository_schemes",
@@ -63,6 +112,19 @@ def main():
         "managed client root",
     ):
         assert snippet in validate, "missing client validation: %s" % snippet
+    stat_task = validate.split("- name: Stat client backup paths", 1)[1].split(
+        "- name: Assert client backup paths exist and are directories", 1
+    )[0]
+    assert "no_log: true" in stat_task, "backup path stat must hide full job items"
+    path_assert_task = validate.split(
+        "- name: Assert client backup paths exist and are directories", 1
+    )[1].split("- name: Validate local repository paths", 1)[0]
+    assert "offsitebuddy_client_backup_path_checks" in path_assert_task, (
+        "backup path assertions must loop over sanitized results"
+    )
+    assert "item.item.0" not in path_assert_task, (
+        "backup path assertions must not retain the full job object"
+    )
 
     docs = read("docs/append-only-maintenance.md").lower()
     assert "does not enforce retention" in docs, "retention non-enforcement must be explicit"
@@ -79,6 +141,14 @@ def main():
     assert ".offsitebuddy-managed" in server_tasks, "server role must mark managed stacks"
     assert "offsitebuddy_cleanup_stale" in server_tasks, "server role must support stale cleanup"
     assert "state: absent" in server_tasks, "server stale cleanup must stop old stacks"
+    assert "state: restarted" not in server_tasks, (
+        "changed server files must converge with Compose up, not restart"
+    )
+    converge_task = server_tasks.split(
+        "- name: Converge per-friend server stacks", 1
+    )[1].split("- name: Find managed friend stack markers", 1)[0]
+    assert "state: present" in converge_task, "server stacks must converge with up -d"
+    assert "pull: missing" in converge_task, "server convergence must retain pull behavior"
 
     server_validate = read("roles/server/tasks/validate.yml")
     assert "offsitebuddy_friends | map(attribute='name')" in server_validate, "server friend names must be unique"
@@ -133,6 +203,12 @@ def main():
     assert "url-encoded" in getting_started, "REST URL credentials must be documented as URL-encoded"
     assert "ansible-galaxy collection install" in getting_started, (
         "collection installation path must be documented"
+    )
+    assert "127.0.0.11" in getting_started, (
+        "Docker embedded DNS failure mode must be documented"
+    )
+    assert "tailscale ip" in getting_started, (
+        "Tailnet IP repository fallback must be documented"
     )
 
     workflow = read(".github/workflows/ci.yml")
@@ -252,6 +328,17 @@ def main():
         "stale backup timers must be stopped"
     )
     assert "state: absent" in client_systemd, "stale unit files must be removed"
+
+    for path, collection_variable in (
+        ("roles/client/tasks/validate.yml", "offsitebuddy_client_jobs"),
+        ("roles/client/tasks/restic.yml", "offsitebuddy_client_jobs"),
+        ("roles/client/tasks/systemd.yml", "offsitebuddy_client_jobs"),
+        ("roles/server/tasks/validate.yml", "offsitebuddy_friends"),
+        ("roles/server/tasks/rest_server.yml", "offsitebuddy_friends"),
+    ):
+        assert_secret_loops_are_redacted(path, collection_variable)
+
+    assert_client_validation_output_is_redacted()
 
     client_compose = read("roles/client/templates/compose.yaml.j2")
     assert "type: bind" in client_compose, "client volumes should use long-form bind mounts"

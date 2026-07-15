@@ -1,28 +1,33 @@
 ---
 - name: Ensure client job directories exist
   ansible.builtin.file:
-    path: "{{ offsitebuddy_client_root }}/{{ job.name }}"
+    path: "{{ offsitebuddy_client_root }}/{{ job_name }}"
     state: directory
     owner: "{{ offsitebuddy_client_owner }}"
     group: "{{ offsitebuddy_client_group }}"
     mode: "0755"
-  loop: "{{ offsitebuddy_client_jobs }}"
+  loop: "{{ offsitebuddy_client_jobs | map(attribute='name') | list }}"
   loop_control:
-    loop_var: job
-    label: "{{ job.name }}"
+    loop_var: job_name
+    label: "{{ job_name }}"
 
 - name: Ensure client tailscale state directories exist
   ansible.builtin.file:
-    path: "{{ offsitebuddy_client_root }}/{{ job.name }}/tailscale-state"
+    path: "{{ offsitebuddy_client_root }}/{{ job_name }}/tailscale-state"
     state: directory
     owner: "{{ offsitebuddy_client_owner }}"
     group: "{{ offsitebuddy_client_group }}"
     mode: "0700"
-  loop: "{{ offsitebuddy_client_jobs }}"
+  loop: >-
+    {{
+      offsitebuddy_client_jobs
+      | selectattr('tailscale', 'defined')
+      | map(attribute='name')
+      | list
+    }}
   loop_control:
-    loop_var: job
-    label: "{{ job.name }}"
-  when: job.tailscale is defined
+    loop_var: job_name
+    label: "{{ job_name }}"
 
 - name: Write restic environment files
   ansible.builtin.template:
@@ -40,14 +45,15 @@
 - name: Mark managed client job directories
   ansible.builtin.copy:
     content: "offsitebuddy\n"
-    dest: "{{ offsitebuddy_client_root }}/{{ job.name }}/.offsitebuddy-managed"
+    dest: >-
+      {{ offsitebuddy_client_root }}/{{ job_name }}/.offsitebuddy-managed
     owner: "{{ offsitebuddy_client_owner }}"
     group: "{{ offsitebuddy_client_group }}"
     mode: "0644"
-  loop: "{{ offsitebuddy_client_jobs }}"
+  loop: "{{ offsitebuddy_client_jobs | map(attribute='name') | list }}"
   loop_control:
-    loop_var: job
-    label: "{{ job.name }}"
+    loop_var: job_name
+    label: "{{ job_name }}"
 
 - name: Write restic password files
   ansible.builtin.copy:
@@ -73,6 +79,7 @@
   loop_control:
     loop_var: job
     label: "{{ job.name }}"
+  no_log: true
 
 - name: Write restic Compose files
   ansible.builtin.template:
@@ -85,6 +92,7 @@
   loop_control:
     loop_var: job
     label: "{{ job.name }}"
+  no_log: true
 
 - name: Write restic helper scripts
   ansible.builtin.template:
@@ -146,3 +154,4 @@
     - offsitebuddy_start_services | bool
     - job.run_initial_backup | default(true) | bool
   changed_when: true
+  no_log: true
