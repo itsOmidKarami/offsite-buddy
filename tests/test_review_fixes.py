@@ -18,10 +18,69 @@ def assert_secret_loops_are_redacted(path, collection_variable):
         if collection_variable not in loop:
             continue
         safe_name_projection = "map(attribute='name')" in loop
-        assert task.get("no_log") is True or safe_name_projection, (
-            "%s loops over %s without no_log or a safe name projection: %s"
+        access_mode_assertion = task.get("ansible.builtin.assert")
+        safe_numeric_index_projection = (
+            "range(0, %s | length)" % collection_variable in loop
+            and task.get("name") == "Validate friend rest-server access modes"
+            and task.get("vars", {}).get("offsitebuddy_mode_friend")
+            == "{{ offsitebuddy_friends[friend_index] }}"
+            and task.get("loop_control", {}).get("loop_var") == "friend_index"
+            and task.get("loop_control", {}).get("label")
+            == "{{ offsitebuddy_mode_friend.name | default('unnamed') }}"
+            and set(task) == {
+                "name",
+                "vars",
+                "ansible.builtin.assert",
+                "loop",
+                "loop_control",
+            }
+            and isinstance(access_mode_assertion, dict)
+            and set(access_mode_assertion) == {"that", "fail_msg"}
+            and isinstance(access_mode_assertion["that"], list)
+            and len(access_mode_assertion["that"]) == 1
+            and "offsitebuddy_mode_friend.rest_server.mode"
+            in access_mode_assertion["that"][0]
+            and "['append_only', 'read_write']" in access_mode_assertion["that"][0]
+            and access_mode_assertion["fail_msg"]
+            == "Friend {{ offsitebuddy_mode_friend.name | default('unnamed') }} "
+            "rest_server.mode must be append_only or read_write."
+            and not any(
+                secret_field in str(task).lower()
+                for secret_field in ("password", "auth_key", "repository")
+            )
+        )
+        assert (
+            task.get("no_log") is True
+            or safe_name_projection
+            or safe_numeric_index_projection
+        ), (
+            "%s loops over %s without no_log or a safe projection: %s"
             % (path, collection_variable, task["name"])
         )
+
+
+def assert_unsafe_numeric_secret_loop_is_rejected():
+    try:
+        assert_secret_loops_are_redacted(
+            "tests/fixtures/unsafe-numeric-secret-loop.yml", "offsitebuddy_friends"
+        )
+    except AssertionError:
+        return
+    raise AssertionError(
+        "numeric-index loops must not bypass redaction with credential-bearing labels"
+    )
+
+
+def assert_unsafe_numeric_debug_loop_is_rejected():
+    try:
+        assert_secret_loops_are_redacted(
+            "tests/fixtures/unsafe-numeric-debug-loop.yml", "offsitebuddy_friends"
+        )
+    except AssertionError:
+        return
+    raise AssertionError(
+        "numeric-index loops must not permit output of the complete friend mapping"
+    )
 
 
 def assert_client_validation_output_is_redacted():
@@ -135,6 +194,13 @@ def main():
     assert "devices:" in server_compose, "tailscale must map /dev/net/tun as a device"
     assert "NET_RAW" in server_compose, "tailscale should include NET_RAW capability"
     assert "type: bind" in server_compose, "server volumes should use long-form bind mounts"
+    for snippet in (
+        "(friend.rest_server.mode | default('append_only')) == 'append_only'",
+        "--append-only",
+    ):
+        assert snippet in server_compose, (
+            "server compose missing access mode behavior: %s" % snippet
+        )
 
     server_tasks = read("roles/server/tasks/rest_server.yml")
     assert "python3-passlib" in server_tasks, "server role must install passlib for htpasswd"
@@ -151,6 +217,16 @@ def main():
     assert "pull: missing" in converge_task, "server convergence must retain pull behavior"
 
     server_validate = read("roles/server/tasks/validate.yml")
+    for snippet in (
+        "Validate friend rest-server access modes",
+        "offsitebuddy_mode_friend.rest_server.mode is not defined",
+        "offsitebuddy_mode_friend.rest_server.mode is string",
+        "in ['append_only', 'read_write']",
+        "rest_server.mode must be append_only or read_write",
+    ):
+        assert snippet in server_validate, (
+            "missing server access mode validation: %s" % snippet
+        )
     assert "offsitebuddy_friends | map(attribute='name')" in server_validate, "server friend names must be unique"
     assert "map(attribute='quota.path')" in server_validate, "server quota paths must be unique"
     assert "map(attribute='tailscale.hostname')" in server_validate, "server hostnames must be unique"
@@ -337,6 +413,9 @@ def main():
         ("roles/server/tasks/rest_server.yml", "offsitebuddy_friends"),
     ):
         assert_secret_loops_are_redacted(path, collection_variable)
+
+    assert_unsafe_numeric_secret_loop_is_rejected()
+    assert_unsafe_numeric_debug_loop_is_rejected()
 
     assert_client_validation_output_is_redacted()
 

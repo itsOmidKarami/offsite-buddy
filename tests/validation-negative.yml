@@ -23,6 +23,13 @@
     boolean_port_friend:
       rest_server:
         port: true
+    invalid_rest_server_modes:
+      - ""
+      - null
+      - true
+      - false
+      - append-only
+      - READ_WRITE
     invalid_client_tailscale_job:
       tailscale:
         hostname: Invalid_Client_Name
@@ -69,6 +76,12 @@
               boolean_port_friend.rest_server.port | string is match('^[0-9]+$')
             )
         fail_msg: Boolean rest-server port guard did not reject true.
+
+    - name: Exercise actual server-role access-mode validation
+      ansible.builtin.include_tasks: tasks/assert-invalid-server-mode.yml
+      loop: "{{ invalid_rest_server_modes }}"
+      loop_control:
+        loop_var: invalid_rest_server_mode
 
     - name: Assert invalid client tailscale config is rejected
       ansible.builtin.assert:

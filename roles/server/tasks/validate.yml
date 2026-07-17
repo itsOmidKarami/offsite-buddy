@@ -18,6 +18,29 @@
       offsitebuddy_server_root must be an absolute managed server root without
       root, trailing slash, or traversal segments.
 
+- name: Validate friend rest-server access modes
+  vars:
+    offsitebuddy_mode_friend: "{{ offsitebuddy_friends[friend_index] }}"
+  ansible.builtin.assert:
+    that:
+      - >-
+        offsitebuddy_mode_friend.rest_server is not defined or
+        offsitebuddy_mode_friend.rest_server is not mapping or
+        offsitebuddy_mode_friend.rest_server.mode is not defined or
+        (
+          offsitebuddy_mode_friend.rest_server.mode is string and
+          offsitebuddy_mode_friend.rest_server.mode
+          in ['append_only', 'read_write']
+        )
+    fail_msg: >-
+      Friend {{ offsitebuddy_mode_friend.name | default('unnamed') }}
+      rest_server.mode must be append_only or read_write.
+  loop: "{{ range(0, offsitebuddy_friends | length) | list }}"
+  loop_control:
+    loop_var: friend_index
+    label: >-
+      {{ offsitebuddy_mode_friend.name | default('unnamed') }}
+
 - name: Validate each friend declaration
   ansible.builtin.assert:
     that:

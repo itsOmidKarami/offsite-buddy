@@ -8,6 +8,11 @@
         path: /srv/offsitebuddy/friends/alice/compose.yaml
       register: server_compose
 
+    - name: Read read-write server compose
+      ansible.builtin.slurp:
+        path: /srv/offsitebuddy/friends/bob/compose.yaml
+      register: read_write_server_compose
+
     - name: Read client backup script
       ansible.builtin.slurp:
         path: /etc/offsitebuddy/jobs/photos_to_bob/backup.sh
@@ -78,6 +83,7 @@
         cmd: "docker compose --project-directory {{ item }} config --quiet"
       loop:
         - /srv/offsitebuddy/friends/alice
+        - /srv/offsitebuddy/friends/bob
         - /etc/offsitebuddy/jobs/photos_to_bob
       when: docker_compose_check.rc == 0
       changed_when: false
@@ -103,6 +109,8 @@
     - name: Parse rendered Compose files
       ansible.builtin.set_fact:
         server_yaml: "{{ server_compose.content | b64decode | from_yaml }}"
+        read_write_server_yaml: >-
+          {{ read_write_server_compose.content | b64decode | from_yaml }}
         client_yaml: "{{ client_compose.content | b64decode | from_yaml }}"
 
     - name: Assert rendered server and client files
@@ -122,6 +130,30 @@
           - >-
             server_yaml.services['rest-server'].environment.OPTIONS
             is search('--append-only')
+          - >-
+            read_write_server_yaml.services['rest-server'].environment.OPTIONS
+            is not search('--append-only')
+          - >-
+            read_write_server_yaml.services['rest-server'].environment.OPTIONS
+            is not search('--read-write')
+          - >-
+            read_write_server_yaml.services['rest-server'].environment.OPTIONS
+            is search('--listen :8001')
+          - >-
+            read_write_server_yaml.services['rest-server'].environment.PASSWORD_FILE
+            == '/run/secrets/htpasswd'
+          - >-
+            read_write_server_yaml.services['rest-server'].network_mode
+            == 'service:tailscale'
+          - >-
+            read_write_server_yaml.services['rest-server'].volumes
+            | selectattr('source', 'equalto', '/tmp/offsitebuddy-bob')
+            | list | length == 1
+          - >-
+            read_write_server_yaml.services['rest-server'].volumes
+            | selectattr('target', 'equalto', '/run/secrets/htpasswd')
+            | selectattr('read_only', 'equalto', true)
+            | list | length == 1
           - >-
             client_yaml.services.restic.entrypoint == ['restic']
           - >-
@@ -149,3 +181,6 @@
             client_secret_stats.results | map(attribute='stat.mode') | list
             == ['0600', '0600']
           - unit_stats.results | map(attribute='stat.exists') | min
+
+    - name: Verify access-mode transitions
+      ansible.builtin.import_tasks: tasks/verify_access_modes.yml
