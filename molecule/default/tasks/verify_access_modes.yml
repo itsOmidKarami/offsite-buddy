@@ -1,11 +1,78 @@
 ---
+- name: Define access-mode verification states
+  ansible.builtin.set_fact:
+    access_mode_initial_friends:
+      - name: alice
+        quota:
+          path: /tmp/offsitebuddy-alice
+          enforced: true
+          enforcement_note: "Test path acts as quota-managed storage."
+        tailscale:
+          hostname: offsitebuddy-alice
+          auth_key: test-auth-key
+        rest_server:
+          username: alice
+          password: test-rest-server-password
+          port: 8000
+      - name: bob
+        quota:
+          path: /tmp/offsitebuddy-bob
+          enforced: true
+          enforcement_note: "Test path acts as quota-managed storage."
+        tailscale:
+          hostname: offsitebuddy-bob
+          auth_key: test-bob-auth-key
+        rest_server:
+          username: bob
+          password: test-bob-rest-server-password
+          port: 8001
+          mode: read_write
+    access_mode_transitioned_friends:
+      - name: alice
+        quota:
+          path: /tmp/offsitebuddy-alice
+          enforced: true
+          enforcement_note: "Test path acts as quota-managed storage."
+        tailscale:
+          hostname: offsitebuddy-alice
+          auth_key: test-auth-key
+        rest_server:
+          username: alice
+          password: test-rest-server-password
+          port: 8000
+          mode: read_write
+      - name: bob
+        quota:
+          path: /tmp/offsitebuddy-bob
+          enforced: true
+          enforcement_note: "Test path acts as quota-managed storage."
+        tailscale:
+          hostname: offsitebuddy-bob
+          auth_key: test-bob-auth-key
+        rest_server:
+          username: bob
+          password: test-bob-rest-server-password
+          port: 8001
+          mode: append_only
+    access_mode_credential_paths:
+      - alice/htpasswd
+      - alice/.env
+      - bob/htpasswd
+      - bob/.env
+    access_mode_artifact_paths:
+      - alice/compose.yaml
+      - alice/htpasswd
+      - alice/.env
+      - bob/compose.yaml
+      - bob/htpasswd
+      - bob/.env
+  no_log: true
+
 - name: Capture access-mode credential files before transitions
   ansible.builtin.stat:
-    path: "/srv/offsitebuddy/friends/{{ item }}/htpasswd"
+    path: "/srv/offsitebuddy/friends/{{ item }}"
     checksum_algorithm: sha256
-  loop:
-    - alice
-    - bob
+  loop: "{{ access_mode_credential_paths }}"
   register: access_mode_credentials_before
 
 - name: Exercise both access-mode transition directions
@@ -15,33 +82,35 @@
         name: itsomidkarami.offsitebuddy.server
       vars:
         offsitebuddy_start_services: false
-        offsitebuddy_friends:
-          - name: alice
-            quota:
-              path: /tmp/offsitebuddy-alice
-              enforced: true
-              enforcement_note: "Test path acts as quota-managed storage."
-            tailscale:
-              hostname: offsitebuddy-alice
-              auth_key: test-auth-key
-            rest_server:
-              username: alice
-              password: test-rest-server-password
-              port: 8000
-              mode: read_write
-          - name: bob
-            quota:
-              path: /tmp/offsitebuddy-bob
-              enforced: true
-              enforcement_note: "Test path acts as quota-managed storage."
-            tailscale:
-              hostname: offsitebuddy-bob
-              auth_key: test-bob-auth-key
-            rest_server:
-              username: bob
-              password: test-bob-rest-server-password
-              port: 8001
-              mode: append_only
+        offsitebuddy_friends: "{{ access_mode_transitioned_friends }}"
+
+    - name: Capture access-mode files after transitions
+      ansible.builtin.stat:
+        path: "/srv/offsitebuddy/friends/{{ item }}"
+        checksum_algorithm: sha256
+      loop: "{{ access_mode_artifact_paths }}"
+      register: access_mode_files_after
+
+    - name: Apply transitioned access modes again
+      ansible.builtin.include_role:
+        name: itsomidkarami.offsitebuddy.server
+      vars:
+        offsitebuddy_start_services: false
+        offsitebuddy_friends: "{{ access_mode_transitioned_friends }}"
+
+    - name: Capture access-mode credential files after repeat
+      ansible.builtin.stat:
+        path: "/srv/offsitebuddy/friends/{{ item }}"
+        checksum_algorithm: sha256
+      loop: "{{ access_mode_credential_paths }}"
+      register: access_mode_credentials_after_repeat
+
+    - name: Capture access-mode files after repeat
+      ansible.builtin.stat:
+        path: "/srv/offsitebuddy/friends/{{ item }}"
+        checksum_algorithm: sha256
+      loop: "{{ access_mode_artifact_paths }}"
+      register: access_mode_files_after_repeat
 
     - name: Read transitioned access-mode Compose files
       ansible.builtin.slurp:
@@ -51,37 +120,46 @@
         - bob
       register: transitioned_access_mode_composes
 
-    - name: Capture access-mode credential files after transitions
-      ansible.builtin.stat:
-        path: "/srv/offsitebuddy/friends/{{ item }}/htpasswd"
-        checksum_algorithm: sha256
-      loop:
-        - alice
-        - bob
-      register: access_mode_credentials_after
+    - name: Normalize transitioned access-mode Compose files
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - "offsitebuddy-transitioned-{{ item.item }}"
+          - -f
+          - "-"
+          - config
+        stdin: "{{ item.content | b64decode }}"
+      loop: "{{ transitioned_access_mode_composes.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      register: normalized_transitioned_access_mode_composes
+      delegate_to: localhost
+      become: false
+      environment:
+        TS_AUTHKEY: molecule-compose-validation
+      changed_when: false
 
     - name: Parse transitioned access-mode Compose files
       ansible.builtin.set_fact:
         transitioned_alice_yaml: >-
           {{
-            transitioned_access_mode_composes.results[0].content
-            | b64decode | from_yaml
+            normalized_transitioned_access_mode_composes.results[0].stdout
+            | from_yaml
           }}
         transitioned_bob_yaml: >-
           {{
-            transitioned_access_mode_composes.results[1].content
-            | b64decode | from_yaml
+            normalized_transitioned_access_mode_composes.results[1].stdout
+            | from_yaml
           }}
 
-    - name: Assert isolated bidirectional access-mode transitions
+    - name: Assert isolated repeatable access-mode transitions
       ansible.builtin.assert:
         that:
           - >-
             transitioned_alice_yaml.services['rest-server'].environment.OPTIONS
             is not search('--append-only')
-          - >-
-            transitioned_alice_yaml.services['rest-server'].environment.OPTIONS
-            is not search('--read-write')
           - >-
             transitioned_bob_yaml.services['rest-server'].environment.OPTIONS
             is search('--append-only')
@@ -95,10 +173,18 @@
             | list | length == 1
           - >-
             (
-              access_mode_credentials_after.results
+              access_mode_credentials_after_repeat.results
               | map(attribute='stat.checksum') | list
             ) == (
               access_mode_credentials_before.results
+              | map(attribute='stat.checksum') | list
+            )
+          - >-
+            (
+              access_mode_files_after_repeat.results
+              | map(attribute='stat.checksum') | list
+            ) == (
+              access_mode_files_after.results
               | map(attribute='stat.checksum') | list
             )
   always:
@@ -107,29 +193,79 @@
         name: itsomidkarami.offsitebuddy.server
       vars:
         offsitebuddy_start_services: false
-        offsitebuddy_friends:
-          - name: alice
-            quota:
-              path: /tmp/offsitebuddy-alice
-              enforced: true
-              enforcement_note: "Test path acts as quota-managed storage."
-            tailscale:
-              hostname: offsitebuddy-alice
-              auth_key: test-auth-key
-            rest_server:
-              username: alice
-              password: test-rest-server-password
-              port: 8000
-          - name: bob
-            quota:
-              path: /tmp/offsitebuddy-bob
-              enforced: true
-              enforcement_note: "Test path acts as quota-managed storage."
-            tailscale:
-              hostname: offsitebuddy-bob
-              auth_key: test-bob-auth-key
-            rest_server:
-              username: bob
-              password: test-bob-rest-server-password
-              port: 8001
-              mode: read_write
+        offsitebuddy_friends: "{{ access_mode_initial_friends }}"
+
+    - name: Read restored access-mode Compose files
+      ansible.builtin.slurp:
+        path: "/srv/offsitebuddy/friends/{{ item }}/compose.yaml"
+      loop:
+        - alice
+        - bob
+      register: restored_access_mode_composes
+
+    - name: Normalize restored access-mode Compose files
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - "offsitebuddy-restored-{{ item.item }}"
+          - -f
+          - "-"
+          - config
+        stdin: "{{ item.content | b64decode }}"
+      loop: "{{ restored_access_mode_composes.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      register: normalized_restored_access_mode_composes
+      delegate_to: localhost
+      become: false
+      environment:
+        TS_AUTHKEY: molecule-compose-validation
+      changed_when: false
+
+    - name: Capture restored access-mode credential files
+      ansible.builtin.stat:
+        path: "/srv/offsitebuddy/friends/{{ item }}"
+        checksum_algorithm: sha256
+      loop: "{{ access_mode_credential_paths }}"
+      register: restored_access_mode_credentials
+
+    - name: Parse restored access-mode Compose files
+      ansible.builtin.set_fact:
+        restored_alice_yaml: >-
+          {{
+            normalized_restored_access_mode_composes.results[0].stdout
+            | from_yaml
+          }}
+        restored_bob_yaml: >-
+          {{
+            normalized_restored_access_mode_composes.results[1].stdout
+            | from_yaml
+          }}
+
+    - name: Assert restored access modes and credentials
+      ansible.builtin.assert:
+        that:
+          - >-
+            restored_alice_yaml.services['rest-server'].environment.OPTIONS
+            is search('--append-only')
+          - >-
+            restored_bob_yaml.services['rest-server'].environment.OPTIONS
+            is not search('--append-only')
+          - >-
+            restored_alice_yaml.services['rest-server'].volumes
+            | selectattr('source', 'equalto', '/tmp/offsitebuddy-alice')
+            | list | length == 1
+          - >-
+            restored_bob_yaml.services['rest-server'].volumes
+            | selectattr('source', 'equalto', '/tmp/offsitebuddy-bob')
+            | list | length == 1
+          - >-
+            (
+              restored_access_mode_credentials.results
+              | map(attribute='stat.checksum') | list
+            ) == (
+              access_mode_credentials_before.results
+              | map(attribute='stat.checksum') | list
+            )

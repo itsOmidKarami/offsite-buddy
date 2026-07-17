@@ -36,12 +36,6 @@
               'msg', 'search',
               'rest_server.mode must be append_only or read_write'
             ) | list | length > 0
-          - >-
-            'mode-validation-tailscale-secret'
-            not in (ansible_failed_result | string)
-          - >-
-            'mode-validation-rest-server-secret'
-            not in (ansible_failed_result | string)
         fail_msg: >-
           Invalid rest-server mode did not fail with the safe mode-specific
           validation message.

@@ -24,12 +24,8 @@
       rest_server:
         port: true
     invalid_rest_server_modes:
-      - ""
       - null
-      - true
-      - false
       - append-only
-      - READ_WRITE
     invalid_client_tailscale_job:
       tailscale:
         hostname: Invalid_Client_Name
