@@ -3,7 +3,7 @@
   block:
     - name: Apply server role with an invalid access mode
       ansible.builtin.include_role:
-        name: itsomidkarami.offsitebuddy.server
+        name: server
       vars:
         offsitebuddy_server_root: "{{ offsitebuddy_validation_base }}/server"
         offsitebuddy_start_services: false
