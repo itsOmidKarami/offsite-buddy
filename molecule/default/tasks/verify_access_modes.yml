@@ -14,6 +14,7 @@
           username: alice
           password: test-rest-server-password
           port: 8000
+      # Exact current converge fixture; used for final restoration.
       - name: bob
         quota:
           path: /tmp/offsitebuddy-bob
@@ -21,12 +22,11 @@
           enforcement_note: "Test path acts as quota-managed storage."
         tailscale:
           hostname: offsitebuddy-bob
-          auth_key: test-bob-auth-key
+          auth_key: test-bob-server-auth-key
         rest_server:
           username: bob
-          password: test-bob-rest-server-password
-          port: 8001
-          mode: read_write
+          password: test-bob-rest-password
+          port: 8100
     access_mode_transitioned_friends:
       - name: alice
         quota:
@@ -48,11 +48,11 @@
           enforcement_note: "Test path acts as quota-managed storage."
         tailscale:
           hostname: offsitebuddy-bob
-          auth_key: test-bob-auth-key
+          auth_key: test-bob-server-auth-key
         rest_server:
           username: bob
-          password: test-bob-rest-server-password
-          port: 8001
+          password: test-bob-rest-password
+          port: 8100
           mode: append_only
     access_mode_credential_paths:
       - alice/htpasswd
@@ -66,7 +66,45 @@
       - bob/compose.yaml
       - bob/htpasswd
       - bob/.env
+    access_mode_stable_state_paths:
+      - alice/compose.yaml
+      - alice/.env
+      - bob/compose.yaml
+      - bob/.env
   no_log: true
+
+- name: Define two-mode access baseline
+  ansible.builtin.set_fact:
+    access_mode_baseline_friends:
+      - >-
+        {{
+          access_mode_initial_friends[0] | combine({
+            'rest_server': access_mode_initial_friends[0].rest_server
+            | combine({'mode': 'append_only'})
+          })
+        }}
+      - >-
+        {{
+          access_mode_initial_friends[1] | combine({
+            'rest_server': access_mode_initial_friends[1].rest_server
+            | combine({'mode': 'read_write'})
+          })
+        }}
+  no_log: true
+
+- name: Capture converged access-mode files before transitions
+  ansible.builtin.stat:
+    path: "/srv/offsitebuddy/friends/{{ item }}"
+    checksum_algorithm: sha256
+  loop: "{{ access_mode_stable_state_paths }}"
+  register: access_mode_converged_files_before
+
+- name: Seed two-mode access baseline
+  ansible.builtin.include_role:
+    name: itsomidkarami.offsitebuddy.server
+  vars:
+    offsitebuddy_start_services: false
+    offsitebuddy_friends: "{{ access_mode_baseline_friends }}"
 
 - name: Capture access-mode credential files before transitions
   ansible.builtin.stat:
@@ -231,6 +269,36 @@
       loop: "{{ access_mode_credential_paths }}"
       register: restored_access_mode_credentials
 
+    - name: Capture restored access-mode files
+      ansible.builtin.stat:
+        path: "/srv/offsitebuddy/friends/{{ item }}"
+        checksum_algorithm: sha256
+      loop: "{{ access_mode_stable_state_paths }}"
+      register: restored_access_mode_files
+
+    - name: Verify restored REST credentials remain isolated
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - >-
+            from passlib.apache import HtpasswdFile; import sys;
+            raise SystemExit(0 if HtpasswdFile(sys.argv[1]).check_password(
+            sys.argv[2], sys.argv[3]) else 1)
+          - "/srv/offsitebuddy/friends/{{ item.name }}/htpasswd"
+          - "{{ item.name }}"
+          - "{{ item.password }}"
+      loop:
+        - name: alice
+          password: test-rest-server-password
+        - name: bob
+          password: test-bob-rest-password
+      loop_control:
+        label: "{{ item.name }}"
+      register: restored_access_mode_auth_checks
+      changed_when: false
+      no_log: true
+
     - name: Parse restored access-mode Compose files
       ansible.builtin.set_fact:
         restored_alice_yaml: >-
@@ -252,7 +320,10 @@
             is search('--append-only')
           - >-
             restored_bob_yaml.services['rest-server'].environment.OPTIONS
-            is not search('--append-only')
+            is search('--append-only')
+          - >-
+            restored_bob_yaml.services['rest-server'].environment.OPTIONS
+            is search('--listen :8100')
           - >-
             restored_alice_yaml.services['rest-server'].volumes
             | selectattr('source', 'equalto', '/tmp/offsitebuddy-alice')
@@ -269,3 +340,14 @@
               access_mode_credentials_before.results
               | map(attribute='stat.checksum') | list
             )
+          - >-
+            (
+              restored_access_mode_files.results
+              | map(attribute='stat.checksum') | list
+            ) == (
+              access_mode_converged_files_before.results
+              | map(attribute='stat.checksum') | list
+            )
+          - >-
+            restored_access_mode_auth_checks.results
+            | map(attribute='rc') | list == [0, 0]

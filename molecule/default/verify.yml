@@ -3,30 +3,134 @@
   hosts: all
   become: true
   tasks:
-    - name: Read server compose
+    - name: Read per-entry generated files
       ansible.builtin.slurp:
-        path: /srv/offsitebuddy/friends/alice/compose.yaml
-      register: server_compose
+        path: "{{ item.path }}"
+      loop:
+        - name: alice_compose
+          path: /srv/offsitebuddy/friends/alice/compose.yaml
+        - name: bob_compose
+          path: /srv/offsitebuddy/friends/bob/compose.yaml
+        - name: alice_env
+          path: /srv/offsitebuddy/friends/alice/.env
+        - name: bob_env
+          path: /srv/offsitebuddy/friends/bob/.env
+        - name: alice_htpasswd
+          path: /srv/offsitebuddy/friends/alice/htpasswd
+        - name: bob_htpasswd
+          path: /srv/offsitebuddy/friends/bob/htpasswd
+        - name: photos_compose
+          path: /etc/offsitebuddy/jobs/photos_to_bob/compose.yaml
+        - name: documents_compose
+          path: /etc/offsitebuddy/jobs/documents_to_alice/compose.yaml
+        - name: photos_env
+          path: /etc/offsitebuddy/jobs/photos_to_bob/.env
+        - name: documents_env
+          path: /etc/offsitebuddy/jobs/documents_to_alice/.env
+        - name: photos_password
+          path: /etc/offsitebuddy/jobs/photos_to_bob/password
+        - name: documents_password
+          path: /etc/offsitebuddy/jobs/documents_to_alice/password
+        - name: photos_backup
+          path: /etc/offsitebuddy/jobs/photos_to_bob/backup.sh
+        - name: photos_init
+          path: /etc/offsitebuddy/jobs/photos_to_bob/init.sh
+        - name: photos_check
+          path: /etc/offsitebuddy/jobs/photos_to_bob/check.sh
+        - name: photos_restore
+          path: /etc/offsitebuddy/jobs/photos_to_bob/restore-latest.sh
+        - name: photos_snapshots
+          path: /etc/offsitebuddy/jobs/photos_to_bob/snapshots.sh
+        - name: photos_stats
+          path: /etc/offsitebuddy/jobs/photos_to_bob/stats.sh
+        - name: documents_backup
+          path: /etc/offsitebuddy/jobs/documents_to_alice/backup.sh
+        - name: documents_init
+          path: /etc/offsitebuddy/jobs/documents_to_alice/init.sh
+        - name: documents_check
+          path: /etc/offsitebuddy/jobs/documents_to_alice/check.sh
+        - name: documents_restore
+          path: /etc/offsitebuddy/jobs/documents_to_alice/restore-latest.sh
+        - name: documents_snapshots
+          path: /etc/offsitebuddy/jobs/documents_to_alice/snapshots.sh
+        - name: documents_stats
+          path: /etc/offsitebuddy/jobs/documents_to_alice/stats.sh
+        - name: photos_check_timer
+          path: /etc/systemd/system/offsitebuddy-check-photos_to_bob.timer
+        - name: documents_check_timer
+          path: /etc/systemd/system/offsitebuddy-check-documents_to_alice.timer
+        - name: photos_backup_timer
+          path: /etc/systemd/system/offsitebuddy-backup-photos_to_bob.timer
+        - name: documents_backup_timer
+          path: /etc/systemd/system/offsitebuddy-backup-documents_to_alice.timer
+        - name: photos_backup_service
+          path: /etc/systemd/system/offsitebuddy-backup-photos_to_bob.service
+        - name: documents_backup_service
+          path: >-
+            /etc/systemd/system/offsitebuddy-backup-documents_to_alice.service
+        - name: photos_excludes
+          path: /etc/offsitebuddy/jobs/photos_to_bob/excludes
+        - name: documents_excludes
+          path: /etc/offsitebuddy/jobs/documents_to_alice/excludes
+      loop_control:
+        label: "{{ item.name }}"
+      register: generated_files
+      no_log: true
 
-    - name: Read read-write server compose
-      ansible.builtin.slurp:
-        path: /srv/offsitebuddy/friends/bob/compose.yaml
-      register: read_write_server_compose
+    - name: Index generated file content
+      ansible.builtin.set_fact:
+        generated_content: >-
+          {{ generated_content | default({}) |
+             combine({item.item.name: item.content | b64decode}) }}
+      loop: "{{ generated_files.results }}"
+      no_log: true
 
-    - name: Read client backup script
-      ansible.builtin.slurp:
-        path: /etc/offsitebuddy/jobs/photos_to_bob/backup.sh
-      register: backup_script
+    - name: Parse generated Compose files
+      ansible.builtin.set_fact:
+        server_artifacts:
+          alice: "{{ generated_content.alice_compose | from_yaml }}"
+          bob: "{{ generated_content.bob_compose | from_yaml }}"
+        client_artifacts:
+          photos_to_bob: "{{ generated_content.photos_compose | from_yaml }}"
+          documents_to_alice: >-
+            {{ generated_content.documents_compose | from_yaml }}
+      no_log: true
 
-    - name: Read client compose
-      ansible.builtin.slurp:
-        path: /etc/offsitebuddy/jobs/photos_to_bob/compose.yaml
-      register: client_compose
-
-    - name: Read client check timer
-      ansible.builtin.slurp:
-        path: /etc/systemd/system/offsitebuddy-check-photos_to_bob.timer
-      register: check_timer
+    - name: Verify per-friend REST authentication
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - >-
+            from passlib.apache import HtpasswdFile; import sys;
+            raise SystemExit(0 if HtpasswdFile(sys.argv[1]).check_password(
+            sys.argv[2], sys.argv[3]) else 1)
+          - "{{ item.path }}"
+          - "{{ item.username }}"
+          - "{{ item.password }}"
+      loop:
+        - name: alice_expected_password
+          path: /srv/offsitebuddy/friends/alice/htpasswd
+          username: alice
+          password: test-rest-server-password
+        - name: alice_rejects_bob_password
+          path: /srv/offsitebuddy/friends/alice/htpasswd
+          username: alice
+          password: test-bob-rest-password
+        - name: bob_expected_password
+          path: /srv/offsitebuddy/friends/bob/htpasswd
+          username: bob
+          password: test-bob-rest-password
+        - name: bob_rejects_alice_password
+          path: /srv/offsitebuddy/friends/bob/htpasswd
+          username: bob
+          password: test-rest-server-password
+      loop_control:
+        label: "{{ item.name }}"
+      register: rest_auth_checks
+      changed_when: false
+      failed_when: false
+      no_log: true
 
     - name: Stat client job outputs
       ansible.builtin.stat:
@@ -40,16 +144,37 @@
         - /etc/offsitebuddy/jobs/photos_to_bob/snapshots.sh
         - /etc/offsitebuddy/jobs/photos_to_bob/stats.sh
         - /etc/offsitebuddy/jobs/documents_to_alice/compose.yaml
+        - /etc/offsitebuddy/jobs/documents_to_alice/excludes
+        - /etc/offsitebuddy/jobs/documents_to_alice/init.sh
+        - /etc/offsitebuddy/jobs/documents_to_alice/check.sh
+        - /etc/offsitebuddy/jobs/documents_to_alice/restore-latest.sh
+        - /etc/offsitebuddy/jobs/documents_to_alice/snapshots.sh
+        - /etc/offsitebuddy/jobs/documents_to_alice/stats.sh
       register: client_output_stats
 
-    - name: Stat client secret files
+    - name: Stat secret files
       ansible.builtin.stat:
         path: "{{ item }}"
       loop:
+        - /srv/offsitebuddy/friends/alice/.env
+        - /srv/offsitebuddy/friends/alice/htpasswd
+        - /srv/offsitebuddy/friends/bob/.env
+        - /srv/offsitebuddy/friends/bob/htpasswd
         - /etc/offsitebuddy/jobs/photos_to_bob/.env
         - /etc/offsitebuddy/jobs/photos_to_bob/password
+        - /etc/offsitebuddy/jobs/documents_to_alice/.env
         - /etc/offsitebuddy/jobs/documents_to_alice/password
-      register: client_secret_stats
+      register: secret_file_stats
+
+    - name: Stat Tailscale state directories
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /srv/offsitebuddy/friends/alice/tailscale-state
+        - /srv/offsitebuddy/friends/bob/tailscale-state
+        - /etc/offsitebuddy/jobs/photos_to_bob/tailscale-state
+        - /etc/offsitebuddy/jobs/documents_to_alice/tailscale-state
+      register: tailscale_state_stats
 
     - name: Stat systemd units
       ansible.builtin.stat:
@@ -59,19 +184,30 @@
         - /etc/systemd/system/offsitebuddy-backup-photos_to_bob.timer
         - /etc/systemd/system/offsitebuddy-check-photos_to_bob.service
         - /etc/systemd/system/offsitebuddy-check-photos_to_bob.timer
+        - /etc/systemd/system/offsitebuddy-backup-documents_to_alice.service
         - /etc/systemd/system/offsitebuddy-backup-documents_to_alice.timer
+        - /etc/systemd/system/offsitebuddy-check-documents_to_alice.service
+        - /etc/systemd/system/offsitebuddy-check-documents_to_alice.timer
       register: unit_stats
 
     - name: Verify helper script syntax
       ansible.builtin.command:
         cmd: "bash -n {{ item }}"
-      loop:
-        - /etc/offsitebuddy/jobs/photos_to_bob/backup.sh
-        - /etc/offsitebuddy/jobs/photos_to_bob/init.sh
-        - /etc/offsitebuddy/jobs/photos_to_bob/check.sh
-        - /etc/offsitebuddy/jobs/photos_to_bob/restore-latest.sh
-        - /etc/offsitebuddy/jobs/photos_to_bob/snapshots.sh
-        - /etc/offsitebuddy/jobs/photos_to_bob/stats.sh
+      loop: >-
+        {{
+          [
+            'photos_to_bob',
+            'documents_to_alice'
+          ] | product([
+            'backup.sh',
+            'init.sh',
+            'check.sh',
+            'restore-latest.sh',
+            'snapshots.sh',
+            'stats.sh'
+          ]) | map('join', '/') | map('regex_replace', '^',
+          '/etc/offsitebuddy/jobs/') | list
+        }}
       changed_when: false
 
     - name: Normalize rendered server Compose files
@@ -84,12 +220,12 @@
           - -f
           - "-"
           - config
-        stdin: "{{ item.content | b64decode }}"
+        stdin: "{{ item.content }}"
       loop:
         - name: alice
-          content: "{{ server_compose.content }}"
+          content: "{{ generated_content.alice_compose }}"
         - name: bob
-          content: "{{ read_write_server_compose.content }}"
+          content: "{{ generated_content.bob_compose }}"
       loop_control:
         label: "{{ item.name }}"
       register: normalized_server_composes
@@ -98,6 +234,174 @@
       environment:
         TS_AUTHKEY: molecule-compose-validation
       changed_when: false
+
+    - name: Parse normalized server Compose files
+      ansible.builtin.set_fact:
+        normalized_server_artifacts:
+          alice: >-
+            {{ normalized_server_composes.results[0].stdout | from_yaml }}
+          bob: >-
+            {{ normalized_server_composes.results[1].stdout | from_yaml }}
+
+    # yamllint disable rule:line-length
+    - name: Derive safe per-entry isolation checks
+      ansible.builtin.set_fact:
+        isolation_checks:
+          alice_quota_mount: >-
+            {{ '/tmp/offsitebuddy-alice' in generated_content.alice_compose and
+            '/tmp/offsitebuddy-bob' not in generated_content.alice_compose }}
+          bob_quota_mount: >-
+            {{ '/tmp/offsitebuddy-bob' in generated_content.bob_compose and
+            '/tmp/offsitebuddy-alice' not in generated_content.bob_compose }}
+          alice_tailscale_identity: >-
+            {{ 'offsitebuddy-alice' in generated_content.alice_compose and
+            'offsitebuddy-bob' not in generated_content.alice_compose }}
+          bob_tailscale_identity: >-
+            {{ 'offsitebuddy-bob' in generated_content.bob_compose and
+            'offsitebuddy-alice' not in generated_content.bob_compose }}
+          alice_env_owner: >-
+            {{ 'test-auth-key' in generated_content.alice_env and
+            'test-bob-server-auth-key' not in generated_content.alice_env }}
+          bob_env_owner: >-
+            {{ 'test-bob-server-auth-key' in generated_content.bob_env and
+            'test-auth-key' not in generated_content.bob_env }}
+          alice_htpasswd_owner: >-
+            {{ generated_content.alice_htpasswd is match('^alice:') and
+            'bob:' not in generated_content.alice_htpasswd }}
+          bob_htpasswd_owner: >-
+            {{ generated_content.bob_htpasswd is match('^bob:') and
+            'alice:' not in generated_content.bob_htpasswd }}
+          alice_rest_expected_password: >-
+            {{ rest_auth_checks.results[0].rc == 0 }}
+          alice_rest_rejects_bob_password: >-
+            {{ rest_auth_checks.results[1].rc != 0 }}
+          bob_rest_expected_password: >-
+            {{ rest_auth_checks.results[2].rc == 0 }}
+          bob_rest_rejects_alice_password: >-
+            {{ rest_auth_checks.results[3].rc != 0 }}
+          alice_auth_mount_owner: >-
+            {{ server_artifacts.alice.services['rest-server'].volumes
+            | selectattr('source', 'equalto', './htpasswd')
+            | selectattr('target', 'equalto', '/run/secrets/htpasswd')
+            | selectattr('read_only', 'equalto', true) | list | length == 1 }}
+          alice_auth_mount_isolated: >-
+            {{ server_artifacts.alice.services['rest-server'].volumes
+            | selectattr('source', 'equalto',
+            '../bob/htpasswd')
+            | list | length == 0 }}
+          bob_auth_mount_owner: >-
+            {{ server_artifacts.bob.services['rest-server'].volumes
+            | selectattr('source', 'equalto', './htpasswd')
+            | selectattr('target', 'equalto', '/run/secrets/htpasswd')
+            | selectattr('read_only', 'equalto', true) | list | length == 1 }}
+          bob_auth_mount_isolated: >-
+            {{ server_artifacts.bob.services['rest-server'].volumes
+            | selectattr('source', 'equalto',
+            '../alice/htpasswd')
+            | list | length == 0 }}
+          photos_repository_endpoint: >-
+            {{ 'offsitebuddy-alice:8000' in generated_content.photos_env and
+            'offsitebuddy-bob:8100' not in generated_content.photos_env }}
+          documents_repository_endpoint: >-
+            {{ 'offsitebuddy-bob:8100' in generated_content.documents_env and
+            'offsitebuddy-alice:8000' not in generated_content.documents_env }}
+          photos_repository_credentials: >-
+            {{ 'RESTIC_REPOSITORY=rest:http://alice:test-rest-server-password'
+            ~ '@offsitebuddy-alice:8000/' in generated_content.photos_env and
+            'test-bob-rest-password' not in generated_content.photos_env }}
+          documents_repository_credentials: >-
+            {{ 'RESTIC_REPOSITORY=rest:http://bob:test-bob-rest-password'
+            ~ '@offsitebuddy-bob:8100/' in generated_content.documents_env and
+            'test-rest-server-password' not in generated_content.documents_env }}
+          photos_env_owner: >-
+            {{ 'test-client-auth-key' in generated_content.photos_env and
+            'test-documents-client-auth-key' not in generated_content.photos_env }}
+          documents_env_owner: >-
+            {{ 'test-documents-client-auth-key' in generated_content.documents_env
+            and 'test-client-auth-key' not in generated_content.documents_env }}
+          photos_password_owner: >-
+            {{ generated_content.photos_password | trim == 'test-restic-password' }}
+          documents_password_owner: >-
+            {{ generated_content.documents_password | trim ==
+            'test-documents-restic-password' }}
+          photos_backup_owner: >-
+            {{ '/tmp/offsitebuddy-source' in generated_content.photos_backup and
+            '/tmp/offsitebuddy-documents' not in generated_content.photos_backup }}
+          documents_backup_owner: >-
+            {{ '/tmp/offsitebuddy-documents' in generated_content.documents_backup
+            and '/tmp/offsitebuddy-source' not in generated_content.documents_backup }}
+          photos_restore_owner: >-
+            {{ '/tmp/offsitebuddy-source' in generated_content.photos_restore and
+            '/tmp/offsitebuddy-documents' not in generated_content.photos_restore }}
+          documents_restore_owner: >-
+            {{ '/tmp/offsitebuddy-documents' in generated_content.documents_restore
+            and '/tmp/offsitebuddy-source' not in generated_content.documents_restore }}
+          photos_init_helper: >-
+            {{ 'job_dir=' in generated_content.photos_init and
+            '/tmp/offsitebuddy-documents' not in generated_content.photos_init }}
+          photos_check_helper: >-
+            {{ 'job_dir=' in generated_content.photos_check and
+            '/tmp/offsitebuddy-documents' not in generated_content.photos_check }}
+          photos_snapshots_helper: >-
+            {{ 'job_dir=' in generated_content.photos_snapshots and
+            '/tmp/offsitebuddy-documents' not in generated_content.photos_snapshots }}
+          photos_stats_helper: >-
+            {{ 'job_dir=' in generated_content.photos_stats and
+            '/tmp/offsitebuddy-documents' not in generated_content.photos_stats }}
+          documents_init_helper: >-
+            {{ 'job_dir=' in generated_content.documents_init and
+            '/tmp/offsitebuddy-source' not in generated_content.documents_init }}
+          documents_check_helper: >-
+            {{ 'job_dir=' in generated_content.documents_check and
+            '/tmp/offsitebuddy-source' not in generated_content.documents_check }}
+          documents_snapshots_helper: >-
+            {{ 'job_dir=' in generated_content.documents_snapshots and
+            '/tmp/offsitebuddy-source' not in generated_content.documents_snapshots }}
+          documents_stats_helper: >-
+            {{ 'job_dir=' in generated_content.documents_stats and
+            '/tmp/offsitebuddy-source' not in generated_content.documents_stats }}
+          photos_compose_owner: >-
+            {{ 'offsitebuddy-client-photos' in generated_content.photos_compose and
+            'offsitebuddy-client-documents' not in generated_content.photos_compose }}
+          documents_compose_owner: >-
+            {{ 'offsitebuddy-client-documents' in generated_content.documents_compose
+            and 'offsitebuddy-client-photos' not in generated_content.documents_compose }}
+          photos_check_timer: >-
+            {{ 'OnCalendar=weekly' in generated_content.photos_check_timer and
+            'photos_to_bob' in generated_content.photos_check_timer and
+            'documents_to_alice' not in generated_content.photos_check_timer }}
+          documents_check_timer: >-
+            {{ 'OnCalendar=weekly' in generated_content.documents_check_timer and
+            'documents_to_alice' in generated_content.documents_check_timer and
+            'photos_to_bob' not in generated_content.documents_check_timer }}
+          photos_backup_timer: >-
+            {{ 'OnCalendar=*-*-* 03:30:00' in generated_content.photos_backup_timer
+            and 'photos_to_bob' in generated_content.photos_backup_timer
+            and 'documents_to_alice' not in generated_content.photos_backup_timer }}
+          documents_backup_timer: >-
+            {{ 'OnCalendar=*-*-* 04:15:00' in
+            generated_content.documents_backup_timer and
+            'documents_to_alice' in generated_content.documents_backup_timer and
+            'photos_to_bob' not in generated_content.documents_backup_timer }}
+          photos_backup_service: >-
+            {{ 'ExecStart=/etc/offsitebuddy/jobs/photos_to_bob/backup.sh' in
+            generated_content.photos_backup_service and
+            'documents_to_alice' not in generated_content.photos_backup_service }}
+          documents_backup_service: >-
+            {{ 'ExecStart=/etc/offsitebuddy/jobs/documents_to_alice/backup.sh'
+            in generated_content.documents_backup_service and
+            'photos_to_bob' not in generated_content.documents_backup_service }}
+          photos_excludes: >-
+            {{ '/tmp/offsitebuddy-source/.cache' in generated_content.photos_excludes
+            and '/tmp/offsitebuddy-documents/.cache' not in
+            generated_content.photos_excludes }}
+          documents_excludes: >-
+            {{ '/tmp/offsitebuddy-documents/.cache' in
+            generated_content.documents_excludes and
+            '/tmp/offsitebuddy-source/.cache' not in
+            generated_content.documents_excludes }}
+      no_log: true
+    # yamllint enable rule:line-length
 
     - name: Check systemd-analyze availability
       ansible.builtin.command:
@@ -114,85 +418,109 @@
           /etc/systemd/system/offsitebuddy-backup-photos_to_bob.timer
           /etc/systemd/system/offsitebuddy-check-photos_to_bob.service
           /etc/systemd/system/offsitebuddy-check-photos_to_bob.timer
+          /etc/systemd/system/offsitebuddy-backup-documents_to_alice.service
+          /etc/systemd/system/offsitebuddy-backup-documents_to_alice.timer
+          /etc/systemd/system/offsitebuddy-check-documents_to_alice.service
+          /etc/systemd/system/offsitebuddy-check-documents_to_alice.timer
       when: systemd_analyze_check.rc == 0
       changed_when: false
 
-    - name: Parse rendered Compose files
-      ansible.builtin.set_fact:
-        server_yaml: "{{ server_compose.content | b64decode | from_yaml }}"
-        normalized_server_yaml: >-
-          {{ normalized_server_composes.results[0].stdout | from_yaml }}
-        normalized_read_write_server_yaml: >-
-          {{ normalized_server_composes.results[1].stdout | from_yaml }}
-        client_yaml: "{{ client_compose.content | b64decode | from_yaml }}"
+    - name: Assert per-entry isolation
+      ansible.builtin.assert:
+        that: item.value
+        fail_msg: "{{ item.key }} has an unexpected ownership value"
+      loop: "{{ isolation_checks | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
 
     - name: Assert rendered server and client files
       ansible.builtin.assert:
         that:
           - >-
-            server_yaml.services.tailscale.image ==
+            server_artifacts.alice.services.tailscale.image ==
             'tailscale/tailscale:stable'
           - >-
-            server_yaml.services.tailscale.environment.TS_USERSPACE ==
+            server_artifacts.alice.services.tailscale.environment.TS_USERSPACE
+            ==
             'false'
           - >-
-            server_yaml.services.tailscale.devices ==
+            server_artifacts.alice.services.tailscale.devices ==
             ['/dev/net/tun:/dev/net/tun']
           - >-
-            'NET_RAW' in server_yaml.services.tailscale.cap_add
+            'NET_RAW' in server_artifacts.alice.services.tailscale.cap_add
           - >-
-            normalized_server_yaml.services['rest-server'].environment.OPTIONS
+            normalized_server_artifacts.alice.services['rest-server']
+            .environment.OPTIONS
             is search('--append-only')
           - >-
-            normalized_read_write_server_yaml.services['rest-server'].environment.OPTIONS
+            normalized_server_artifacts.bob.services['rest-server']
+            .environment.OPTIONS
             is search('--append-only')
           - >-
-            normalized_read_write_server_yaml.services['rest-server'].environment.OPTIONS
+            normalized_server_artifacts.bob.services['rest-server']
+            .environment.OPTIONS
             is not search('--read-write')
           - >-
-            normalized_read_write_server_yaml.services['rest-server'].environment.OPTIONS
+            normalized_server_artifacts.bob.services['rest-server']
+            .environment.OPTIONS
             is search('--listen :8100')
           - >-
-            normalized_read_write_server_yaml.services['rest-server'].environment.PASSWORD_FILE
+            normalized_server_artifacts.bob.services['rest-server']
+            .environment.PASSWORD_FILE
             == '/run/secrets/htpasswd'
           - >-
-            normalized_read_write_server_yaml.services['rest-server'].network_mode
+            normalized_server_artifacts.bob.services['rest-server'].network_mode
             == 'service:tailscale'
           - >-
-            normalized_read_write_server_yaml.services['rest-server'].volumes
+            normalized_server_artifacts.bob.services['rest-server'].volumes
             | selectattr('source', 'equalto', '/tmp/offsitebuddy-bob')
             | list | length == 1
           - >-
-            normalized_read_write_server_yaml.services['rest-server'].volumes
+            normalized_server_artifacts.bob.services['rest-server'].volumes
             | selectattr('target', 'equalto', '/run/secrets/htpasswd')
             | selectattr('read_only', 'equalto', true)
             | list | length == 1
           - >-
-            client_yaml.services.restic.entrypoint == ['restic']
+            client_artifacts.photos_to_bob.services.restic.entrypoint
+            == ['restic']
           - >-
-            client_yaml.services.tailscale.image ==
+            client_artifacts.photos_to_bob.services.tailscale.image ==
             'tailscale/tailscale:stable'
           - >-
-            client_yaml.services.tailscale.environment.TS_HOSTNAME ==
+            client_artifacts.photos_to_bob.services.tailscale.environment
+            .TS_HOSTNAME ==
             'offsitebuddy-client-photos'
           - >-
-            client_yaml.services.tailscale.environment.TS_USERSPACE ==
+            client_artifacts.photos_to_bob.services.tailscale.environment
+            .TS_USERSPACE ==
             'false'
           - >-
-            client_yaml.services.restic.network_mode == 'service:tailscale'
+            client_artifacts.photos_to_bob.services.restic.network_mode
+            == 'service:tailscale'
           - >-
-            client_yaml.services.tailscale.devices ==
+            client_artifacts.photos_to_bob.services.tailscale.devices ==
             ['/dev/net/tun:/dev/net/tun']
           - >-
-            'NET_RAW' in client_yaml.services.tailscale.cap_add
+            'NET_RAW' in
+            client_artifacts.photos_to_bob.services.tailscale.cap_add
           - >-
-            'curl -fsS' in (backup_script.content | b64decode)
+            client_artifacts.documents_to_alice.services.restic.entrypoint
+            == ['restic']
           - >-
-            'OnCalendar=weekly' in (check_timer.content | b64decode)
+            client_artifacts.documents_to_alice.services.tailscale.environment
+            .TS_HOSTNAME == 'offsitebuddy-client-documents'
+          - >-
+            client_artifacts.documents_to_alice.services.restic.network_mode
+            == 'service:tailscale'
+          - "'curl -fsS' in generated_content.photos_backup"
+          - "'OnCalendar=weekly' in generated_content.photos_check_timer"
           - client_output_stats.results | map(attribute='stat.exists') | min
           - >-
-            client_secret_stats.results | map(attribute='stat.mode') | list
-            == ['0600', '0600', '0600']
+            secret_file_stats.results | map(attribute='stat.mode') | list
+            == ['0600', '0600', '0600', '0600', '0600', '0600', '0600', '0600']
+          - >-
+            tailscale_state_stats.results | map(attribute='stat.mode') | list
+            == ['0700', '0700', '0700', '0700']
           - unit_stats.results | map(attribute='stat.exists') | min
 
     - name: Verify access-mode transitions
