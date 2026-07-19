@@ -1,0 +1,99 @@
+---
+- name: Verify initial backup marker behavior
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    offsitebuddy_client_root: >-
+      {{ playbook_dir | dirname }}/.ansible/tmp/initial-backup-regression
+  tasks:
+    - name: Reset initial backup regression workspace
+      ansible.builtin.file:
+        path: "{{ offsitebuddy_client_root }}"
+        state: absent
+
+    - name: Create initial backup regression job directories
+      ansible.builtin.file:
+        path: "{{ offsitebuddy_client_root }}/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - successful
+        - failed
+
+    - name: Write successful backup stub
+      ansible.builtin.copy:
+        content: |
+          #!/usr/bin/env sh
+          printf 'run\n' >> "{{ offsitebuddy_client_root }}/successful/runs"
+        dest: "{{ offsitebuddy_client_root }}/successful/backup.sh"
+        mode: "0755"
+
+    - name: Run successful initial backup
+      ansible.builtin.include_tasks: >-
+        ../roles/client/tasks/initial_backup.yml
+      vars:
+        job:
+          name: successful
+
+    - name: Repeat successful initial backup
+      ansible.builtin.include_tasks: >-
+        ../roles/client/tasks/initial_backup.yml
+      vars:
+        job:
+          name: successful
+
+    - name: Read successful backup run count
+      ansible.builtin.slurp:
+        path: "{{ offsitebuddy_client_root }}/successful/runs"
+      register: successful_backup_runs
+
+    - name: Stat successful backup marker
+      ansible.builtin.stat:
+        path: >-
+          {{ offsitebuddy_client_root }}/successful/.initial-backup-complete
+      register: successful_backup_marker
+
+    - name: Assert successful backup is marked once
+      ansible.builtin.assert:
+        that:
+          - successful_backup_runs.content | b64decode == 'run\n'
+          - successful_backup_marker.stat.exists
+
+    - name: Write failed backup stub
+      ansible.builtin.copy:
+        content: |
+          #!/usr/bin/env sh
+          exit 1
+        dest: "{{ offsitebuddy_client_root }}/failed/backup.sh"
+        mode: "0755"
+
+    - name: Record failed initial backup
+      block:
+        - name: Run failed initial backup
+          ansible.builtin.include_tasks: >-
+            ../roles/client/tasks/initial_backup.yml
+          vars:
+            job:
+              name: failed
+      rescue:
+        - name: Mark expected backup failure as observed
+          ansible.builtin.set_fact:
+            initial_backup_failure_observed: true
+
+    - name: Stat failed backup marker
+      ansible.builtin.stat:
+        path: "{{ offsitebuddy_client_root }}/failed/.initial-backup-complete"
+      register: failed_backup_marker
+
+    - name: Assert failed backup is not marked
+      ansible.builtin.assert:
+        that:
+          - initial_backup_failure_observed | default(false)
+          - not failed_backup_marker.stat.exists
+
+    - name: Remove initial backup regression workspace
+      ansible.builtin.file:
+        path: "{{ offsitebuddy_client_root }}"
+        state: absent

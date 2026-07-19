@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -326,17 +327,85 @@ def main():
     ):
         assert snippet in verify, "missing Molecule artifact check: %s" % snippet
     client_tasks = read("roles/client/tasks/restic.yml")
-    assert "(job_dir + '/backup.sh') | quote" in client_tasks, (
-        "initial backup script path must be shell-quoted"
+    client_task_defs = {
+        task["name"]: task for task in yaml.safe_load(client_tasks)
+    }
+    repository_check_task = client_task_defs[
+        "Check for existing restic repositories"
+    ]
+    repository_check = repository_check_task[
+        "community.docker.docker_compose_v2_run"
+    ]
+    assert repository_check["service"] == "restic"
+    assert repository_check["argv"] == ["snapshots"]
+    assert repository_check["cleanup"] is True
+    assert "interactive" not in repository_check
+    assert "tty" not in repository_check
+    assert repository_check_task["changed_when"] is False
+    assert repository_check_task["failed_when"], (
+        "repository probe must reject errors other than a missing repository"
     )
-    assert "marker_file | quote" in client_tasks, "initial backup marker path must be shell-quoted"
+    failed_when = " ".join(repository_check_task["failed_when"])
+    assert "offsitebuddy_restic_missing_repository_pattern" in failed_when
+    missing_pattern = "".join(
+        re.findall(
+            r"'([^']+)'",
+            repository_check_task["vars"][
+                "offsitebuddy_restic_missing_repository_pattern"
+            ],
+        )
+    )
+    for error in (
+        "Fatal: repository does not exist: unable to open config file",
+        "Unable to open config file: no such file or directory",
+        "Is there a repository at the following location?",
+    ):
+        assert re.search(missing_pattern, error.lower()), error
+    for error in (
+        "Unable to open config file: permission denied",
+        "Unable to open config file: wrong password or no key found",
+        "Connection refused",
+    ):
+        assert not re.search(missing_pattern, error.lower()), error
+
+    repository_init_task = client_task_defs[
+        "Initialize missing restic repositories"
+    ]
+    repository_init = repository_init_task[
+        "community.docker.docker_compose_v2_run"
+    ]
+    assert repository_init["service"] == "restic"
+    assert repository_init["argv"] == ["init"]
+    assert repository_init["cleanup"] is True
+    assert "interactive" not in repository_init
+    assert "tty" not in repository_init
+    assert "ansible.builtin.command" not in repository_init_task
+
+    initial_backups_task = client_task_defs["Run initial backups"]
+    assert initial_backups_task["ansible.builtin.include_tasks"] == (
+        "initial_backup.yml"
+    )
+    assert initial_backups_task["loop_control"]["loop_var"] == "job"
+
+    initial_backup_tasks = yaml.safe_load(
+        read("roles/client/tasks/initial_backup.yml")
+    )
+    initial_backup_task, marker_task = initial_backup_tasks
+    assert "ansible.builtin.command" in initial_backup_task
+    assert "ansible.builtin.shell" not in initial_backup_task
+    assert initial_backup_task["ansible.builtin.command"]["creates"] == (
+        "{{ marker_file }}"
+    )
+    assert initial_backup_task["vars"]["marker_file"].endswith(
+        "/.initial-backup-complete"
+    )
+    assert marker_task["ansible.builtin.file"]["state"] == "touch"
+    assert marker_task["ansible.builtin.file"]["access_time"] == "preserve"
+    assert marker_task["ansible.builtin.file"]["modification_time"] == (
+        "preserve"
+    )
+    assert "ansible.builtin.shell:" not in client_tasks
     assert ".offsitebuddy-managed" in client_tasks, "client role must mark managed jobs"
-    assert "register: restic_init_result" in client_tasks, (
-        "repository init must register stdout for changed_when"
-    )
-    assert "restic_init_result.stdout" in client_tasks, (
-        "repository init changed_when must inspect registered stdout"
-    )
     assert "no_log: true" in client_tasks.split("- name: Initialize missing restic repositories")[0], (
         "helper script templating must hide heartbeat URLs"
     )
@@ -344,6 +413,11 @@ def main():
         "- name: Initialize missing restic repositories", 1
     )[1].split("- name: Run initial backup", 1)[0]
     assert "no_log: true" in init_task, "repository init must hide repository URLs"
+
+    initial_backup_result, initial_backup_output = run_playbook(
+        "tests/initial-backup-regression.yml"
+    )
+    assert initial_backup_result.returncode == 0, initial_backup_output
 
     client_systemd = read("roles/client/tasks/systemd.yml")
     assert "offsitebuddy_cleanup_stale" in client_systemd, "client role must support stale cleanup"
@@ -425,6 +499,10 @@ def main():
             )
 
     galaxy = read("galaxy.yml")
+    galaxy_metadata = yaml.safe_load(galaxy)
+    assert galaxy_metadata["dependencies"]["community.docker"] == ">=3.13.0", (
+        "docker_compose_v2_run requires community.docker 3.13.0 or newer"
+    )
     for ignored in (
         ".venv",
         ".uv-cache",
@@ -448,6 +526,15 @@ def main():
     contributing = read("CONTRIBUTING.md")
     pr_template = read(".github/pull_request_template.md")
     requirements_dev = read("requirements-dev.yml")
+    requirements = yaml.safe_load(requirements_dev)["collections"]
+    docker_requirement = next(
+        requirement
+        for requirement in requirements
+        if requirement["name"] == "community.docker"
+    )
+    assert docker_requirement["version"] == ">=3.13.0", (
+        "development dependencies must match the collection's Compose module floor"
+    )
     assert "ansible.posix" in requirements_dev, (
         "Molecule Docker create uses ansible.posix.synchronize"
     )
