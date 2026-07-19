@@ -25,7 +25,9 @@ services:
     environment:
       PASSWORD_FILE: /run/secrets/htpasswd
       OPTIONS: >-
+{% if (friend.rest_server.mode | default('append_only')) == 'append_only' %}
         --append-only
+{% endif %}
         --listen :{{ friend.rest_server.port | default(8000) | int }}
     volumes:
       - type: bind

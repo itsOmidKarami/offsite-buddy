@@ -17,6 +17,19 @@
           username: alice
           password: test-rest-server-password
           port: 8000
+      - name: bob
+        quota:
+          path: /tmp/offsitebuddy-bob
+          enforced: true
+          enforcement_note: "Test path acts as quota-managed storage."
+        tailscale:
+          hostname: offsitebuddy-bob
+          auth_key: test-bob-auth-key
+        rest_server:
+          username: bob
+          password: test-bob-rest-server-password
+          port: 8001
+          mode: read_write
     offsitebuddy_client_jobs:
       - name: photos_to_bob
         repository: >-
@@ -37,11 +50,14 @@
           success_url: ""
           failure_url: ""
   pre_tasks:
-    - name: Create test quota path
+    - name: Create test quota paths
       ansible.builtin.file:
-        path: /tmp/offsitebuddy-alice
+        path: "{{ item }}"
         state: directory
         mode: "0755"
+      loop:
+        - /tmp/offsitebuddy-alice
+        - /tmp/offsitebuddy-bob
     - name: Create test source path
       ansible.builtin.file:
         path: /tmp/offsitebuddy-source

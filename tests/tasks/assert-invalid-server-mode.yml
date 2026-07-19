@@ -1,0 +1,41 @@
+---
+- name: Require the server role to reject one invalid access mode
+  block:
+    - name: Apply server role with an invalid access mode
+      ansible.builtin.include_role:
+        name: server
+      vars:
+        offsitebuddy_server_root: "{{ offsitebuddy_validation_base }}/server"
+        offsitebuddy_start_services: false
+        offsitebuddy_friends:
+          - name: invalid_mode
+            quota:
+              path: "{{ offsitebuddy_validation_base }}/quota"
+              enforced: true
+              enforcement_note: "Validation test quota path."
+            tailscale:
+              hostname: invalid-mode-server
+              auth_key: mode-validation-tailscale-secret
+            rest_server:
+              username: invalid_mode
+              password: mode-validation-rest-server-secret
+              mode: "{{ invalid_rest_server_mode }}"
+
+    - name: Fail when invalid access mode passes validation
+      ansible.builtin.fail:
+        msg: Invalid rest-server mode unexpectedly passed validation.
+  rescue:
+    - name: Assert access-mode failure is safe and specific
+      ansible.builtin.assert:
+        that:
+          - >-
+            ansible_failed_result.msg is search(
+              'rest_server.mode must be append_only or read_write'
+            ) or
+            ansible_failed_result.results | selectattr(
+              'msg', 'search',
+              'rest_server.mode must be append_only or read_write'
+            ) | list | length > 0
+        fail_msg: >-
+          Invalid rest-server mode did not fail with the safe mode-specific
+          validation message.

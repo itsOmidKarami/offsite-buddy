@@ -18,13 +18,20 @@ def assert_secret_loops_are_redacted(path, collection_variable):
         if collection_variable not in loop:
             continue
         safe_name_projection = "map(attribute='name')" in loop
-        assert task.get("no_log") is True or safe_name_projection, (
-            "%s loops over %s without no_log or a safe name projection: %s"
+        behaviorally_redacted = (
+            task.get("name") == "Validate friend rest-server access modes"
+        )
+        assert (
+            task.get("no_log") is True
+            or safe_name_projection
+            or behaviorally_redacted
+        ), (
+            "%s loops over %s without no_log or a safe projection: %s"
             % (path, collection_variable, task["name"])
         )
 
 
-def assert_client_validation_output_is_redacted():
+def run_playbook(path):
     env = os.environ.copy()
     env["ANSIBLE_LOCAL_TEMP"] = str(ROOT / ".ansible/tmp")
     result = subprocess.run(
@@ -34,7 +41,7 @@ def assert_client_validation_output_is_redacted():
             "localhost,",
             "-c",
             "local",
-            "tests/secret-redaction.yml",
+            path,
         ],
         cwd=ROOT,
         env=env,
@@ -43,6 +50,24 @@ def assert_client_validation_output_is_redacted():
         check=False,
     )
     output = result.stdout + result.stderr
+    return result, output
+
+
+def assert_server_mode_validation_output_is_redacted():
+    result, output = run_playbook("tests/validation-negative.yml")
+    assert result.returncode == 0, "negative validation playbook must pass"
+    assert "rest_server.mode must be append_only or read_write" in output, (
+        "access-mode validation must retain its safe failure message"
+    )
+    for secret in (
+        "mode-validation-tailscale-secret",
+        "mode-validation-rest-server-secret",
+    ):
+        assert secret not in output, "Ansible output leaked %s" % secret
+
+
+def assert_client_validation_output_is_redacted():
+    result, output = run_playbook("tests/secret-redaction.yml")
     assert result.returncode != 0, "secret redaction play must fail on the missing path"
     assert "secret_output" in output, "failure must retain the safe job name"
     assert "missing-source" in output, "failure must retain the safe backup path"
@@ -135,7 +160,6 @@ def main():
     assert "devices:" in server_compose, "tailscale must map /dev/net/tun as a device"
     assert "NET_RAW" in server_compose, "tailscale should include NET_RAW capability"
     assert "type: bind" in server_compose, "server volumes should use long-form bind mounts"
-
     server_tasks = read("roles/server/tasks/rest_server.yml")
     assert "python3-passlib" in server_tasks, "server role must install passlib for htpasswd"
     assert ".offsitebuddy-managed" in server_tasks, "server role must mark managed stacks"
@@ -296,12 +320,11 @@ def main():
     for snippet in (
         "bash -n",
         "from_yaml",
-        "docker compose --project-directory",
+        "Normalize rendered server Compose files",
         "systemd-analyze verify",
         "TS_USERSPACE",
     ):
         assert snippet in verify, "missing Molecule artifact check: %s" % snippet
-
     client_tasks = read("roles/client/tasks/restic.yml")
     assert "(job_dir + '/backup.sh') | quote" in client_tasks, (
         "initial backup script path must be shell-quoted"
@@ -338,6 +361,7 @@ def main():
     ):
         assert_secret_loops_are_redacted(path, collection_variable)
 
+    assert_server_mode_validation_output_is_redacted()
     assert_client_validation_output_is_redacted()
 
     client_compose = read("roles/client/templates/compose.yaml.j2")
