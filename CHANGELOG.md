@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.5...v0.1.6) (2026-07-19)
+
+
+### Features
+
+* support read-write rest-server mode ([#21](https://github.com/itsOmidKarami/offsite-buddy/issues/21)) ([e2c5dd6](https://github.com/itsOmidKarami/offsite-buddy/commit/e2c5dd699c11404c283e2e080373a8af9c240829))
+
 ## [0.1.5](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.4...v0.1.5) (2026-07-15)
 
 
