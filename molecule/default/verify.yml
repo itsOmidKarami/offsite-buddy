@@ -39,6 +39,7 @@
         - /etc/offsitebuddy/jobs/photos_to_bob/restore-latest.sh
         - /etc/offsitebuddy/jobs/photos_to_bob/snapshots.sh
         - /etc/offsitebuddy/jobs/photos_to_bob/stats.sh
+        - /etc/offsitebuddy/jobs/documents_to_alice/compose.yaml
       register: client_output_stats
 
     - name: Stat client secret files
@@ -47,6 +48,7 @@
       loop:
         - /etc/offsitebuddy/jobs/photos_to_bob/.env
         - /etc/offsitebuddy/jobs/photos_to_bob/password
+        - /etc/offsitebuddy/jobs/documents_to_alice/password
       register: client_secret_stats
 
     - name: Stat systemd units
@@ -57,6 +59,7 @@
         - /etc/systemd/system/offsitebuddy-backup-photos_to_bob.timer
         - /etc/systemd/system/offsitebuddy-check-photos_to_bob.service
         - /etc/systemd/system/offsitebuddy-check-photos_to_bob.timer
+        - /etc/systemd/system/offsitebuddy-backup-documents_to_alice.timer
       register: unit_stats
 
     - name: Verify helper script syntax
@@ -142,13 +145,13 @@
             is search('--append-only')
           - >-
             normalized_read_write_server_yaml.services['rest-server'].environment.OPTIONS
-            is not search('--append-only')
+            is search('--append-only')
           - >-
             normalized_read_write_server_yaml.services['rest-server'].environment.OPTIONS
             is not search('--read-write')
           - >-
             normalized_read_write_server_yaml.services['rest-server'].environment.OPTIONS
-            is search('--listen :8001')
+            is search('--listen :8100')
           - >-
             normalized_read_write_server_yaml.services['rest-server'].environment.PASSWORD_FILE
             == '/run/secrets/htpasswd'
@@ -189,7 +192,7 @@
           - client_output_stats.results | map(attribute='stat.exists') | min
           - >-
             client_secret_stats.results | map(attribute='stat.mode') | list
-            == ['0600', '0600']
+            == ['0600', '0600', '0600']
           - unit_stats.results | map(attribute='stat.exists') | min
 
     - name: Verify access-mode transitions

@@ -21,15 +21,14 @@
         quota:
           path: /tmp/offsitebuddy-bob
           enforced: true
-          enforcement_note: "Test path acts as quota-managed storage."
+          enforcement_note: "Test path acts as Bob's quota-managed storage."
         tailscale:
           hostname: offsitebuddy-bob
-          auth_key: test-bob-auth-key
+          auth_key: test-bob-server-auth-key
         rest_server:
           username: bob
-          password: test-bob-rest-server-password
-          port: 8001
-          mode: read_write
+          password: test-bob-rest-password
+          port: 8100
     offsitebuddy_client_jobs:
       - name: photos_to_bob
         repository: >-
@@ -49,6 +48,24 @@
           start_url: ""
           success_url: ""
           failure_url: ""
+      - name: documents_to_alice
+        repository: >-
+          rest:http://bob:test-bob-rest-password@offsitebuddy-bob:8100/
+        tailscale:
+          hostname: offsitebuddy-client-documents
+          auth_key: test-documents-client-auth-key
+        password: test-documents-restic-password
+        init_if_missing: false
+        run_initial_backup: false
+        schedule: "04:15"
+        backup_paths:
+          - /tmp/offsitebuddy-documents
+        excludes:
+          - /tmp/offsitebuddy-documents/.cache
+        heartbeat:
+          start_url: ""
+          success_url: ""
+          failure_url: ""
   pre_tasks:
     - name: Create test quota paths
       ansible.builtin.file:
@@ -58,11 +75,14 @@
       loop:
         - /tmp/offsitebuddy-alice
         - /tmp/offsitebuddy-bob
-    - name: Create test source path
+    - name: Create test source paths
       ansible.builtin.file:
-        path: /tmp/offsitebuddy-source
+        path: "{{ item }}"
         state: directory
         mode: "0755"
+      loop:
+        - /tmp/offsitebuddy-source
+        - /tmp/offsitebuddy-documents
   roles:
     - role: itsomidkarami.offsitebuddy.server
     - role: itsomidkarami.offsitebuddy.client
