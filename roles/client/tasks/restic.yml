@@ -123,13 +123,6 @@
   no_log: true
 
 - name: Check for existing restic repositories
-  vars:
-    offsitebuddy_restic_missing_repository_pattern: >-
-      {{
-        'repository.*does not exist'
-        ~ '|config file.*(does not exist|no such file)'
-        ~ '|is there a repository'
-      }}
   community.docker.docker_compose_v2_run:
     project_src: "{{ offsitebuddy_client_root }}/{{ job.name }}"
     service: restic
@@ -146,11 +139,7 @@
   register: offsitebuddy_restic_repository_check
   no_log: true
   changed_when: false
-  failed_when:
-    - offsitebuddy_restic_repository_check.rc != 0
-    - >-
-      (offsitebuddy_restic_repository_check.stderr | default('') | lower)
-      is not search(offsitebuddy_restic_missing_repository_pattern)
+  failed_when: offsitebuddy_restic_repository_check.rc not in [0, 10]
 
 - name: Initialize missing restic repositories
   community.docker.docker_compose_v2_run:
@@ -169,7 +158,7 @@
     - job.init_if_missing | default(true) | bool
     - >-
       (offsitebuddy_restic_repository_check.results[job_index].rc | default(0))
-      != 0
+      == 10
   no_log: true
 
 - name: Run initial backups
