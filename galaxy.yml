@@ -19,7 +19,7 @@ tags:
   - docker
 dependencies:
   community.general: ">=8.0.0"
-  community.docker: ">=3.0.0"
+  community.docker: ">=3.13.0"
 repository: https://github.com/itsOmidKarami/offsite-buddy
 issues: https://github.com/itsOmidKarami/offsite-buddy/issues
 build_ignore:

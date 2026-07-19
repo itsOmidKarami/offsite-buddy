@@ -326,17 +326,28 @@ def main():
     ):
         assert snippet in verify, "missing Molecule artifact check: %s" % snippet
     client_tasks = read("roles/client/tasks/restic.yml")
-    assert "(job_dir + '/backup.sh') | quote" in client_tasks, (
-        "initial backup script path must be shell-quoted"
+    client_task_defs = {
+        task["name"]: task for task in yaml.safe_load(client_tasks)
+    }
+    repository_check_task = client_task_defs[
+        "Check for existing restic repositories"
+    ]
+    assert "community.docker.docker_compose_v2_run" in repository_check_task
+    assert repository_check_task["changed_when"] is False
+    assert repository_check_task["failed_when"] == (
+        "offsitebuddy_restic_repository_check.rc not in [0, 10]"
     )
-    assert "marker_file | quote" in client_tasks, "initial backup marker path must be shell-quoted"
+
+    repository_init_task = client_task_defs[
+        "Initialize missing restic repositories"
+    ]
+    assert "community.docker.docker_compose_v2_run" in repository_init_task
+    assert any(
+        "offsitebuddy_restic_repository_check.results[job_index].rc" in condition
+        and "== 10" in condition
+        for condition in repository_init_task["when"]
+    )
     assert ".offsitebuddy-managed" in client_tasks, "client role must mark managed jobs"
-    assert "register: restic_init_result" in client_tasks, (
-        "repository init must register stdout for changed_when"
-    )
-    assert "restic_init_result.stdout" in client_tasks, (
-        "repository init changed_when must inspect registered stdout"
-    )
     assert "no_log: true" in client_tasks.split("- name: Initialize missing restic repositories")[0], (
         "helper script templating must hide heartbeat URLs"
     )
@@ -344,6 +355,11 @@ def main():
         "- name: Initialize missing restic repositories", 1
     )[1].split("- name: Run initial backup", 1)[0]
     assert "no_log: true" in init_task, "repository init must hide repository URLs"
+
+    initial_backup_result, initial_backup_output = run_playbook(
+        "tests/initial-backup-regression.yml"
+    )
+    assert initial_backup_result.returncode == 0, initial_backup_output
 
     client_systemd = read("roles/client/tasks/systemd.yml")
     assert "offsitebuddy_cleanup_stale" in client_systemd, "client role must support stale cleanup"
@@ -425,6 +441,7 @@ def main():
             )
 
     galaxy = read("galaxy.yml")
+    assert 'community.docker: ">=3.13.0"' in galaxy
     for ignored in (
         ".venv",
         ".uv-cache",
@@ -448,6 +465,7 @@ def main():
     contributing = read("CONTRIBUTING.md")
     pr_template = read(".github/pull_request_template.md")
     requirements_dev = read("requirements-dev.yml")
+    assert 'name: community.docker\n    version: ">=3.13.0"' in requirements_dev
     assert "ansible.posix" in requirements_dev, (
         "Molecule Docker create uses ansible.posix.synchronize"
     )

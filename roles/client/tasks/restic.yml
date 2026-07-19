@@ -122,9 +122,13 @@
     job_check: "{{ item.0.check | default({}) }}"
   no_log: true
 
-- name: Initialize missing restic repositories
-  ansible.builtin.command:
-    cmd: "{{ offsitebuddy_client_root }}/{{ job.name }}/init.sh"
+- name: Check for existing restic repositories
+  community.docker.docker_compose_v2_run:
+    project_src: "{{ offsitebuddy_client_root }}/{{ job.name }}"
+    service: restic
+    argv:
+      - snapshots
+    cleanup: true
   loop: "{{ offsitebuddy_client_jobs }}"
   loop_control:
     loop_var: job
@@ -132,20 +136,33 @@
   when:
     - offsitebuddy_start_services | bool
     - job.init_if_missing | default(true) | bool
-  register: restic_init_result
+  register: offsitebuddy_restic_repository_check
   no_log: true
-  changed_when: >-
-    'created restic repository' in
-    (restic_init_result.stdout | default(''))
+  changed_when: false
+  failed_when: offsitebuddy_restic_repository_check.rc not in [0, 10]
 
-- name: Run initial backup
-  vars:
-    job_dir: "{{ offsitebuddy_client_root }}/{{ job.name }}"
-    marker_file: "{{ job_dir }}/.initial-backup-complete"
-  ansible.builtin.shell:
-    cmd: >-
-      {{ (job_dir + '/backup.sh') | quote }} && touch {{ marker_file | quote }}
-    creates: "{{ marker_file }}"
+- name: Initialize missing restic repositories
+  community.docker.docker_compose_v2_run:
+    project_src: "{{ offsitebuddy_client_root }}/{{ job.name }}"
+    service: restic
+    argv:
+      - init
+    cleanup: true
+  loop: "{{ offsitebuddy_client_jobs }}"
+  loop_control:
+    loop_var: job
+    index_var: job_index
+    label: "{{ job.name }}"
+  when:
+    - offsitebuddy_start_services | bool
+    - job.init_if_missing | default(true) | bool
+    - >-
+      (offsitebuddy_restic_repository_check.results[job_index].rc | default(0))
+      == 10
+  no_log: true
+
+- name: Run initial backups
+  ansible.builtin.include_tasks: initial_backup.yml
   loop: "{{ offsitebuddy_client_jobs }}"
   loop_control:
     loop_var: job
@@ -153,5 +170,4 @@
   when:
     - offsitebuddy_start_services | bool
     - job.run_initial_backup | default(true) | bool
-  changed_when: true
   no_log: true
