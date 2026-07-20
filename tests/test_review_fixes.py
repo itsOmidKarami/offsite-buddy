@@ -287,6 +287,12 @@ def main():
         "release-please action should use the supported Node 24 runtime"
     )
     assert "googleapis/release-please-action@v4" not in release_workflow
+    assert "  contents: write" in release_workflow
+    assert "  pull-requests: write" in release_workflow
+    assert "GH_TOKEN: ${{ github.token }}" in release_workflow
+    assert "RELEASE_PLEASE_TOKEN" not in release_workflow, (
+        "release PRs must be authored by github-actions so the owner can approve them"
+    )
     assert '"draft": true' in release_please, (
         "release-please must leave releases mutable until artifacts are attached"
     )

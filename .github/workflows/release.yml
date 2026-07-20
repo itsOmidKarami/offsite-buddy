@@ -13,27 +13,18 @@ name: Release
         type: string
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 jobs:
   release:
     name: Release and publish
     runs-on: ubuntu-latest
     steps:
-      - name: Check release token
-        env:
-          RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-        run: |
-          if [ -z "$RELEASE_PLEASE_TOKEN" ]; then
-            echo "::error::Set the RELEASE_PLEASE_TOKEN repository secret"
-            exit 1
-          fi
-
       - uses: googleapis/release-please-action@v5
         if: ${{ github.event_name == 'push' }}
         id: release
         with:
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
@@ -134,7 +125,7 @@ jobs:
       - name: Ensure release artifact
         if: ${{ steps.release_tag.outputs.publish == 'true' }}
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ steps.release_tag.outputs.tag }}"
           artifact="${{ steps.version.outputs.artifact }}"
