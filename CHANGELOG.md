@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.6...v0.1.7) (2026-07-19)
+
+
+### Bug Fixes
+
+* use native Ansible modules for client setup ([#23](https://github.com/itsOmidKarami/offsite-buddy/issues/23)) ([4cfd55a](https://github.com/itsOmidKarami/offsite-buddy/commit/4cfd55afaa1aace5be72d0421517443547c4c6ca))
+
 ## [0.1.6](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.5...v0.1.6) (2026-07-19)
 
 
