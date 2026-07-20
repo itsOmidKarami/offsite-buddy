@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.7...v0.1.8) (2026-07-20)
+
+
+### Bug Fixes
+
+* create release PRs as github actions ([#26](https://github.com/itsOmidKarami/offsite-buddy/issues/26)) ([b62ef03](https://github.com/itsOmidKarami/offsite-buddy/commit/b62ef0331449e27d30ef94d40ce839421cd9e1cb))
+
 ## [0.1.7](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.6...v0.1.7) (2026-07-19)
 
 
