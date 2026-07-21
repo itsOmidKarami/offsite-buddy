@@ -1,0 +1,117 @@
+---
+- name: Find managed friend stack markers
+  ansible.builtin.find:
+    paths: "{{ offsitebuddy_server_root }}/friends"
+    patterns: .offsitebuddy-managed
+    recurse: true
+    depth: 2
+    hidden: true
+    file_type: file
+  register: offsitebuddy_server_managed_markers
+  when: offsitebuddy_cleanup_stale | bool
+
+- name: Check stale friends for legacy generic Compose projects
+  vars:
+    current_friend_names: >-
+      {{ offsitebuddy_friends | map(attribute='name') | list }}
+    stale_friend_name: "{{ item.path | dirname | basename }}"
+  community.docker.docker_host_info:
+    containers: true
+    containers_all: true
+    containers_filters:
+      label: "com.docker.compose.project={{ stale_friend_name }}"
+    networks: true
+    networks_filters:
+      label: "com.docker.compose.project={{ stale_friend_name }}"
+  loop: "{{ offsitebuddy_server_managed_markers.files | default([]) }}"
+  loop_control:
+    label: "{{ stale_friend_name }}"
+  register: offsitebuddy_stale_legacy_compose_inspections
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - item.path | dirname | dirname == offsitebuddy_server_root ~ '/friends'
+    - stale_friend_name not in current_friend_names
+  no_log: true
+
+- name: Initialize stale legacy Compose summaries
+  ansible.builtin.set_fact:
+    offsitebuddy_stale_legacy_compose_summaries: []
+  no_log: true
+
+- name: Project stale legacy Compose inspections
+  vars:
+    stale_friend_name: >-
+      {{ legacy_inspection.item.path | dirname | basename }}
+  ansible.builtin.set_fact:
+    offsitebuddy_stale_legacy_compose_summaries: >-
+      {{
+        offsitebuddy_stale_legacy_compose_summaries +
+        [{
+          'friend_name': stale_friend_name,
+          'container_count': legacy_inspection.containers | length,
+          'network_count': legacy_inspection.networks | length
+        }]
+      }}
+  loop: >-
+    {{ offsitebuddy_stale_legacy_compose_inspections.results | default([]) }}
+  loop_control:
+    loop_var: legacy_inspection
+    label: "{{ stale_friend_name | default('skipped') }}"
+  when: not legacy_inspection.skipped | default(false)
+  no_log: true
+
+- name: Refuse to remove stale friends with legacy generic Compose projects
+  ansible.builtin.assert:
+    that:
+      - legacy_project.container_count == 0
+      - legacy_project.network_count == 0
+    fail_msg: >-
+      Legacy Compose project {{ legacy_project.friend_name }} exists
+      ({{ legacy_project.container_count }} containers,
+      {{ legacy_project.network_count }} networks). Inspect it and run
+      docker compose --project-name {{ legacy_project.friend_name }}
+      --file {{
+        offsitebuddy_server_root ~ '/friends/' ~ legacy_project.friend_name ~
+        '/compose.yaml'
+      }} down
+      before rerunning; OffsiteBuddy will not remove it automatically.
+  loop: "{{ offsitebuddy_stale_legacy_compose_summaries | default([]) }}"
+  loop_control:
+    loop_var: legacy_project
+    label: "{{ legacy_project.friend_name }}"
+
+- name: Stop stale friend server stacks
+  vars:
+    current_friend_names: >-
+      {{ offsitebuddy_friends | map(attribute='name') | list }}
+    stale_friend_name: "{{ item.path | dirname | basename }}"
+  community.docker.docker_compose_v2:
+    project_src: "{{ item.path | dirname }}"
+    project_name: "offsitebuddy-friend-{{ stale_friend_name }}"
+    files:
+      - compose.yaml
+    state: absent
+    remove_orphans: true
+  loop: "{{ offsitebuddy_server_managed_markers.files | default([]) }}"
+  loop_control:
+    label: "{{ stale_friend_name }}"
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - item.path | dirname | dirname == offsitebuddy_server_root ~ '/friends'
+    - stale_friend_name not in current_friend_names
+
+- name: Remove stale friend stack directories
+  vars:
+    current_friend_names: >-
+      {{ offsitebuddy_friends | map(attribute='name') | list }}
+    stale_friend_name: "{{ item.path | dirname | basename }}"
+  ansible.builtin.file:
+    path: "{{ item.path | dirname }}"
+    state: absent
+  loop: "{{ offsitebuddy_server_managed_markers.files | default([]) }}"
+  loop_control:
+    label: "{{ stale_friend_name }}"
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - item.path | dirname | dirname == offsitebuddy_server_root ~ '/friends'
+    - stale_friend_name not in current_friend_names

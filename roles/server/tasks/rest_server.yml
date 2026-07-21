@@ -1,4 +1,79 @@
 ---
+- name: Ensure server Python dependencies are installed
+  ansible.builtin.apt:
+    name:
+      - python3-passlib
+      - python3-requests
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Check for legacy generic friend Compose projects
+  community.docker.docker_host_info:
+    containers: true
+    containers_all: true
+    containers_filters:
+      label: "com.docker.compose.project={{ friend_name }}"
+    networks: true
+    networks_filters:
+      label: "com.docker.compose.project={{ friend_name }}"
+  loop: "{{ offsitebuddy_friends | map(attribute='name') | list }}"
+  loop_control:
+    loop_var: friend_name
+    label: "{{ friend_name }}"
+  register: offsitebuddy_server_legacy_compose_inspections
+  no_log: true
+
+- name: Initialize current legacy Compose summaries
+  ansible.builtin.set_fact:
+    offsitebuddy_server_legacy_compose_summaries: []
+  no_log: true
+
+- name: Project current legacy Compose inspections
+  ansible.builtin.set_fact:
+    offsitebuddy_server_legacy_compose_summaries: >-
+      {{
+        offsitebuddy_server_legacy_compose_summaries +
+        [{
+          'friend_name': legacy_inspection.friend_name,
+          'container_count': legacy_inspection.containers | length,
+          'network_count': legacy_inspection.networks | length
+        }]
+      }}
+  loop: >-
+    {{ offsitebuddy_server_legacy_compose_inspections.results | default([]) }}
+  loop_control:
+    loop_var: legacy_inspection
+    label: "{{ legacy_inspection.friend_name | default('skipped') }}"
+  when: not legacy_inspection.skipped | default(false)
+  no_log: true
+
+- name: Refuse to replace legacy generic friend Compose projects
+  ansible.builtin.assert:
+    that:
+      - legacy_project.container_count == 0
+      - legacy_project.network_count == 0
+    fail_msg: >-
+      Legacy Compose project {{ legacy_project.friend_name }} exists
+      ({{ legacy_project.container_count }} containers,
+      {{ legacy_project.network_count }} networks). Inspect it and run
+      docker compose --project-name {{ legacy_project.friend_name }}
+      --file {{
+        offsitebuddy_server_root ~ '/friends/' ~ legacy_project.friend_name ~
+        '/compose.yaml'
+      }} down
+      before rerunning; OffsiteBuddy will not remove it automatically.
+  loop: "{{ offsitebuddy_server_legacy_compose_summaries | default([]) }}"
+  loop_control:
+    loop_var: legacy_project
+    label: "{{ legacy_project.friend_name }}"
+
+- name: Remove stale friend server stacks before current convergence
+  ansible.builtin.import_tasks: cleanup.yml
+
+- name: Check server Compose project identity ownership
+  ansible.builtin.import_tasks: project_identity_preflight.yml
+
 - name: Ensure friend stack directories exist
   ansible.builtin.file:
     path: "{{ offsitebuddy_server_root }}/friends/{{ friend_name }}"
@@ -51,13 +126,6 @@
     label: "{{ friend.name }}"
   no_log: true
 
-- name: Ensure passlib is installed for htpasswd
-  ansible.builtin.apt:
-    name: python3-passlib
-    state: present
-    update_cache: true
-    cache_valid_time: 3600
-
 - name: Write per-friend htpasswd file
   community.general.htpasswd:
     path: "{{ offsitebuddy_server_root }}/friends/{{ friend.name }}/htpasswd"
@@ -91,6 +159,7 @@
   community.docker.docker_compose_v2:
     project_src: >-
       {{ offsitebuddy_server_root }}/friends/{{ friend_name }}
+    project_name: "offsitebuddy-friend-{{ friend_name }}"
     state: present
     pull: missing
   loop: "{{ offsitebuddy_friends | map(attribute='name') | list }}"
@@ -98,44 +167,3 @@
     loop_var: friend_name
     label: "{{ friend_name }}"
   when: offsitebuddy_start_services | bool
-
-- name: Find managed friend stack markers
-  ansible.builtin.find:
-    paths: "{{ offsitebuddy_server_root }}/friends"
-    patterns: .offsitebuddy-managed
-    recurse: true
-    file_type: file
-  register: offsitebuddy_server_managed_markers
-  when: offsitebuddy_cleanup_stale | bool
-
-- name: Stop stale friend server stacks
-  vars:
-    current_friend_names: >-
-      {{ offsitebuddy_friends | map(attribute='name') | list }}
-    stale_friend_name: "{{ item.path | dirname | basename }}"
-  community.docker.docker_compose_v2:
-    project_src: "{{ item.path | dirname }}"
-    state: absent
-    remove_orphans: true
-  loop: "{{ offsitebuddy_server_managed_markers.files | default([]) }}"
-  loop_control:
-    label: "{{ stale_friend_name }}"
-  when:
-    - offsitebuddy_cleanup_stale | bool
-    - offsitebuddy_start_services | bool
-    - stale_friend_name not in current_friend_names
-
-- name: Remove stale friend stack directories
-  vars:
-    current_friend_names: >-
-      {{ offsitebuddy_friends | map(attribute='name') | list }}
-    stale_friend_name: "{{ item.path | dirname | basename }}"
-  ansible.builtin.file:
-    path: "{{ item.path | dirname }}"
-    state: absent
-  loop: "{{ offsitebuddy_server_managed_markers.files | default([]) }}"
-  loop_control:
-    label: "{{ stale_friend_name }}"
-  when:
-    - offsitebuddy_cleanup_stale | bool
-    - stale_friend_name not in current_friend_names

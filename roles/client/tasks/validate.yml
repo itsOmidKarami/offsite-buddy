@@ -18,6 +18,17 @@
       offsitebuddy_client_root must be an absolute managed client root without
       root, trailing slash, or traversal segments.
 
+- name: Validate stale client cleanup can stop managed units
+  ansible.builtin.assert:
+    that:
+      - >-
+        not offsitebuddy_cleanup_stale | bool or
+        (offsitebuddy_start_services | bool and
+         offsitebuddy_manage_systemd | bool)
+    fail_msg: >-
+      offsitebuddy_cleanup_stale requires offsitebuddy_start_services=true and
+      offsitebuddy_manage_systemd=true so stale units are stopped first.
+
 - name: Validate each client job
   ansible.builtin.assert:
     that:
@@ -146,6 +157,24 @@
         | length == offsitebuddy_client_jobs | length
     fail_msg: >-
       offsitebuddy_client_jobs names must be unique.
+
+- name: Validate client job names do not shadow Compose project names
+  vars:
+    offsitebuddy_client_job_names: >-
+      {{ offsitebuddy_client_jobs | map(attribute='name') | list }}
+    offsitebuddy_client_project_names: >-
+      {{
+        offsitebuddy_client_job_names |
+        map('regex_replace', '^', 'offsitebuddy-client-') | list
+      }}
+  ansible.builtin.assert:
+    that:
+      - >-
+        offsitebuddy_client_job_names |
+        intersect(offsitebuddy_client_project_names) | length == 0
+    fail_msg: >-
+      A client job name must not equal another job's
+      offsitebuddy-client-<name> Compose project identity.
 
 - name: Validate client Tailscale hostnames are unique
   vars:

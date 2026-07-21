@@ -1,0 +1,115 @@
+---
+- name: Verify stale cleanup lifecycle
+  hosts: all
+  become: true
+  environment:
+    DOCKER_HOST: >-
+      {{ lookup('env', 'MOLECULE_DOCKER_HOST') |
+      default('unix:///docker.sock', true) }}
+  vars:
+    retained_name: "cleanup-retained-{{ ansible_facts['hostname'] }}"
+    stale_name: "cleanup-stale-{{ ansible_facts['hostname'] }}"
+    stale_no_check_name: >-
+      cleanup-stale-no-check-{{ ansible_facts['hostname'] }}
+  tasks:
+    - name: Find stale Compose project resources
+      community.docker.docker_host_info:
+        containers: true
+        containers_all: true
+        containers_filters:
+          label: >-
+            com.docker.compose.project=offsitebuddy-friend-{{ stale_name }}
+        networks: true
+        networks_filters:
+          label: >-
+            com.docker.compose.project=offsitebuddy-friend-{{ stale_name }}
+      register: stale_compose_project
+
+    - name: Find stale client Compose project resources
+      community.docker.docker_host_info:
+        containers: true
+        containers_all: true
+        containers_filters:
+          label: >-
+            com.docker.compose.project=offsitebuddy-client-{{ stale_name }}
+        networks: true
+        networks_filters:
+          label: >-
+            com.docker.compose.project=offsitebuddy-client-{{ stale_name }}
+      register: stale_client_compose_project
+
+    - name: Check stale and protected paths
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "/srv/offsitebuddy/friends/{{ stale_name }}"
+        - "/etc/offsitebuddy/jobs/{{ stale_name }}"
+        - >-
+          /etc/systemd/system/offsitebuddy-backup-{{ stale_name }}.service
+        - "/etc/systemd/system/offsitebuddy-backup-{{ stale_name }}.timer"
+        - "/etc/systemd/system/offsitebuddy-check-{{ stale_name }}.service"
+        - "/etc/systemd/system/offsitebuddy-check-{{ stale_name }}.timer"
+        - "/etc/offsitebuddy/jobs/{{ stale_no_check_name }}"
+        - >-
+          /etc/systemd/system/offsitebuddy-backup-{{ stale_no_check_name
+          }}.service
+        - >-
+          /etc/systemd/system/offsitebuddy-backup-{{ stale_no_check_name
+          }}.timer
+        - >-
+          /srv/offsitebuddy/friends/{{ retained_name }}/.offsitebuddy-managed
+        - >-
+          /etc/offsitebuddy/jobs/{{ retained_name }}/.offsitebuddy-managed
+        - /srv/offsitebuddy/friends/unmarked
+        - /etc/offsitebuddy/jobs/unmarked
+        - /tmp/offsitebuddy-stale-quota/sentinel
+        - /srv/offsitebuddy/friends
+        - /etc/offsitebuddy/jobs
+      register: cleanup_paths
+
+    - name: Check stale timer runtime state
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - >-
+            offsitebuddy-{{ item }}-{{ stale_name }}.timer
+      loop:
+        - backup
+        - check
+      register: stale_timer_states
+      changed_when: false
+      failed_when: false
+
+    - name: Verify stale runtime and files are gone
+      ansible.builtin.assert:
+        that:
+          - stale_compose_project.containers | length == 0
+          - stale_compose_project.networks | length == 0
+          - stale_client_compose_project.containers | length == 0
+          - stale_client_compose_project.networks | length == 0
+          - not cleanup_paths.results[0].stat.exists
+          - not cleanup_paths.results[1].stat.exists
+          - not cleanup_paths.results[2].stat.exists
+          - not cleanup_paths.results[3].stat.exists
+          - not cleanup_paths.results[4].stat.exists
+          - not cleanup_paths.results[5].stat.exists
+          - not cleanup_paths.results[6].stat.exists
+          - not cleanup_paths.results[7].stat.exists
+          - not cleanup_paths.results[8].stat.exists
+          - >-
+            stale_timer_states.results | map(attribute='rc') |
+            select('equalto', 0) | list | length == 0
+        fail_msg: Stale runtime or managed files remain after cleanup.
+
+    - name: Verify retained and protected data remain
+      ansible.builtin.assert:
+        that:
+          - cleanup_paths.results[9].stat.exists
+          - cleanup_paths.results[10].stat.exists
+          - cleanup_paths.results[11].stat.isdir
+          - cleanup_paths.results[12].stat.isdir
+          - cleanup_paths.results[13].stat.exists
+          - cleanup_paths.results[14].stat.isdir
+          - cleanup_paths.results[15].stat.isdir
+        fail_msg: Cleanup removed retained, unmarked, or external data.

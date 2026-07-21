@@ -18,6 +18,14 @@
       offsitebuddy_server_root must be an absolute managed server root without
       root, trailing slash, or traversal segments.
 
+- name: Validate stale server cleanup can stop managed stacks
+  ansible.builtin.assert:
+    that:
+      - not offsitebuddy_cleanup_stale | bool or offsitebuddy_start_services | bool  # yamllint disable-line rule:line-length
+    fail_msg: >-
+      offsitebuddy_cleanup_stale requires offsitebuddy_start_services=true so
+      stale Compose projects are stopped before their files are removed.
+
 - name: Validate friend rest-server access modes
   vars:
     offsitebuddy_mode_friend: "{{ offsitebuddy_friends[friend_index] }}"
@@ -95,6 +103,24 @@
         | length == offsitebuddy_friends | length
     fail_msg: >-
       offsitebuddy_friends names must be unique.
+
+- name: Validate friend names do not shadow Compose project names
+  vars:
+    offsitebuddy_friend_names: >-
+      {{ offsitebuddy_friends | map(attribute='name') | list }}
+    offsitebuddy_friend_project_names: >-
+      {{
+        offsitebuddy_friend_names |
+        map('regex_replace', '^', 'offsitebuddy-friend-') | list
+      }}
+  ansible.builtin.assert:
+    that:
+      - >-
+        offsitebuddy_friend_names |
+        intersect(offsitebuddy_friend_project_names) | length == 0
+    fail_msg: >-
+      A friend name must not equal another friend's
+      offsitebuddy-friend-<name> Compose project identity.
 
 - name: Validate friend quota paths are unique
   ansible.builtin.assert:
