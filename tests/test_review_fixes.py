@@ -590,6 +590,10 @@ def main():
     assert "offsitebuddy_cleanup_stale" not in client_identity_preflight
     client_preflight = read("roles/client/tasks/compose_preflight.yml")
     assert "community.docker.docker_host_info" in client_preflight
+    client_dependency_install = client_preflight.split(
+        "- name: Ensure client Python dependencies are installed", 1
+    )[1].split("- name: Check for legacy generic client Compose projects", 1)[0]
+    assert "become: true" in client_dependency_install
     assert "Refuse to replace legacy generic client Compose projects" in (
         client_preflight
     )

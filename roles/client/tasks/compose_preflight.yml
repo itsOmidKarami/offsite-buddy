@@ -1,5 +1,6 @@
 ---
 - name: Ensure client Python dependencies are installed
+  become: true
   ansible.builtin.apt:
     name:
       - python3-requests
