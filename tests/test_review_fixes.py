@@ -318,6 +318,9 @@ def main():
     assert "network_count" in cleanup_prepare_projection
 
     cleanup_side_effect = read("molecule/cleanup/side_effect.yml")
+    assert "tskey-auth-" not in cleanup_side_effect, (
+        "Molecule fixtures must not resemble Tailscale API keys"
+    )
     assert "legacy_teardown_root" in cleanup_side_effect
     assert cleanup_side_effect.count(
         'project_src: "{{ legacy_teardown_root }}"'
