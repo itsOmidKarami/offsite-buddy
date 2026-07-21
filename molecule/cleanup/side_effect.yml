@@ -304,7 +304,7 @@
                       enforcement_note: Molecule identity shadow fixture
                     tailscale:
                       hostname: "{{ server_shadow_current }}"
-                      auth_key: tskey-auth-server-shadow-fixture
+                      auth_key: molecule-server-shadow-auth-key
                     rest_server:
                       username: cleanup-server-shadow
                       password: cleanup-server-shadow-fixture
@@ -764,7 +764,7 @@
                       enforcement_note: Molecule legacy migration fixture
                     tailscale:
                       hostname: "{{ current_legacy_friend }}"
-                      auth_key: tskey-auth-current-legacy-fixture
+                      auth_key: molecule-current-legacy-auth-key
                     rest_server:
                       username: cleanup-current-legacy
                       password: cleanup-current-legacy-fixture
