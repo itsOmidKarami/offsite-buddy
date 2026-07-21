@@ -1,0 +1,269 @@
+---
+- name: Find managed client job markers
+  ansible.builtin.find:
+    paths: "{{ offsitebuddy_client_root }}"
+    patterns: .offsitebuddy-managed
+    recurse: true
+    depth: 2
+    hidden: true
+    file_type: file
+  register: offsitebuddy_client_managed_markers
+  when: offsitebuddy_cleanup_stale | bool
+
+- name: Query stale client unit states
+  vars:
+    current_client_job_names: >-
+      {{ offsitebuddy_client_jobs | map(attribute='name') | list }}
+    stale_job_name: "{{ item.0.path | dirname | basename }}"
+    stale_unit: "{{ item.1 }}"
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - --property=LoadState
+      - --property=ActiveState
+      - >-
+        offsitebuddy-{{ stale_unit.kind }}-{{ stale_job_name
+        }}.{{ stale_unit.unit_type }}
+  loop: >-
+    {{
+      (offsitebuddy_client_managed_markers.files | default([]))
+      | product([
+          {'kind': 'backup', 'unit_type': 'timer'},
+          {'kind': 'check', 'unit_type': 'timer'},
+          {'kind': 'backup', 'unit_type': 'service'},
+          {'kind': 'check', 'unit_type': 'service'}
+        ])
+      | list
+    }}
+  loop_control:
+    label: >-
+      {{ stale_job_name }} {{ stale_unit.kind }} {{ stale_unit.unit_type }}
+  register: offsitebuddy_stale_client_unit_states
+  changed_when: false
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - item.0.path | dirname | dirname == offsitebuddy_client_root
+    - stale_job_name not in current_client_job_names
+
+- name: Stop unloaded active stale client units
+  vars:
+    stale_job_name: >-
+      {{ stale_unit_state.item.0.path | dirname | basename }}
+    stale_unit: "{{ stale_unit_state.item.1 }}"
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - stop
+      - >-
+        offsitebuddy-{{ stale_unit.kind }}-{{ stale_job_name
+        }}.{{ stale_unit.unit_type }}
+  loop: >-
+    {{ offsitebuddy_stale_client_unit_states.results | default([]) }}
+  loop_control:
+    loop_var: stale_unit_state
+    label: >-
+      {{ stale_job_name }} {{ stale_unit.kind }} {{ stale_unit.unit_type }}
+  changed_when: true
+  when:
+    - not stale_unit_state.skipped | default(false)
+    - >-
+      'LoadState=not-found' in stale_unit_state.stdout_lines | default([])
+    - >-
+      'ActiveState=inactive' not in stale_unit_state.stdout_lines | default([])
+
+- name: Stop loaded stale client units
+  vars:
+    stale_job_name: >-
+      {{ stale_unit_state.item.0.path | dirname | basename }}
+    stale_unit: "{{ stale_unit_state.item.1 }}"
+  ansible.builtin.systemd:
+    name: >-
+      offsitebuddy-{{ stale_unit.kind }}-{{ stale_job_name
+      }}.{{ stale_unit.unit_type }}
+    enabled: >-
+      {{ false if stale_unit.unit_type == 'timer' else omit }}
+    state: stopped
+    daemon_reload: true
+  loop: >-
+    {{ offsitebuddy_stale_client_unit_states.results | default([]) }}
+  loop_control:
+    loop_var: stale_unit_state
+    label: >-
+      {{ stale_job_name }} {{ stale_unit.kind }} {{ stale_unit.unit_type }}
+  when:
+    - not stale_unit_state.skipped | default(false)
+    - >-
+      'LoadState=not-found' not in stale_unit_state.stdout_lines | default([])
+
+- name: Verify stale client units are inactive
+  vars:
+    current_client_job_names: >-
+      {{ offsitebuddy_client_jobs | map(attribute='name') | list }}
+    stale_job_name: "{{ item.0.path | dirname | basename }}"
+    stale_unit: "{{ item.1 }}"
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - --property=ActiveState
+      - --value
+      - >-
+        offsitebuddy-{{ stale_unit.kind }}-{{ stale_job_name
+        }}.{{ stale_unit.unit_type }}
+  loop: >-
+    {{
+      (offsitebuddy_client_managed_markers.files | default([]))
+      | product([
+          {'kind': 'backup', 'unit_type': 'timer'},
+          {'kind': 'check', 'unit_type': 'timer'},
+          {'kind': 'backup', 'unit_type': 'service'},
+          {'kind': 'check', 'unit_type': 'service'}
+        ])
+      | list
+    }}
+  loop_control:
+    label: >-
+      {{ stale_job_name }} {{ stale_unit.kind }} {{ stale_unit.unit_type }}
+  register: offsitebuddy_stale_client_unit_active_states
+  changed_when: false
+  failed_when: >-
+    offsitebuddy_stale_client_unit_active_states.rc != 0 or
+    offsitebuddy_stale_client_unit_active_states.stdout != 'inactive'
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - item.0.path | dirname | dirname == offsitebuddy_client_root
+    - stale_job_name not in current_client_job_names
+
+- name: Check stale jobs for legacy generic Compose projects
+  vars:
+    current_client_job_names: >-
+      {{ offsitebuddy_client_jobs | map(attribute='name') | list }}
+    stale_job_name: "{{ item.path | dirname | basename }}"
+  community.docker.docker_host_info:
+    containers: true
+    containers_all: true
+    containers_filters:
+      label: "com.docker.compose.project={{ stale_job_name }}"
+    networks: true
+    networks_filters:
+      label: "com.docker.compose.project={{ stale_job_name }}"
+  loop: "{{ offsitebuddy_client_managed_markers.files | default([]) }}"
+  loop_control:
+    label: "{{ stale_job_name }}"
+  register: offsitebuddy_stale_client_legacy_compose_inspections
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - item.path | dirname | dirname == offsitebuddy_client_root
+    - stale_job_name not in current_client_job_names
+  no_log: true
+
+- name: Initialize stale client legacy Compose summaries
+  ansible.builtin.set_fact:
+    offsitebuddy_stale_client_legacy_compose_summaries: []
+  no_log: true
+
+- name: Project stale client legacy Compose inspections
+  vars:
+    stale_job_name: >-
+      {{ legacy_inspection.item.path | dirname | basename }}
+  ansible.builtin.set_fact:
+    offsitebuddy_stale_client_legacy_compose_summaries: >-
+      {{
+        offsitebuddy_stale_client_legacy_compose_summaries +
+        [{
+          'job_name': stale_job_name,
+          'container_count': legacy_inspection.containers | length,
+          'network_count': legacy_inspection.networks | length
+        }]
+      }}
+  loop: >-
+    {{
+      offsitebuddy_stale_client_legacy_compose_inspections.results | default([])
+    }}
+  loop_control:
+    loop_var: legacy_inspection
+    label: "{{ stale_job_name | default('skipped') }}"
+  when: not legacy_inspection.skipped | default(false)
+  no_log: true
+
+- name: Refuse to remove stale jobs with legacy generic Compose projects
+  ansible.builtin.assert:
+    that:
+      - legacy_project.container_count == 0
+      - legacy_project.network_count == 0
+    fail_msg: >-
+      Legacy Compose project {{ legacy_project.job_name }} exists
+      ({{ legacy_project.container_count }} containers,
+      {{ legacy_project.network_count }} networks). Inspect it and run
+      docker compose --project-name {{ legacy_project.job_name }}
+      --file {{
+        offsitebuddy_client_root ~ '/' ~ legacy_project.job_name ~
+        '/compose.yaml'
+      }} down
+      before rerunning; OffsiteBuddy will not remove it automatically.
+  loop: >-
+    {{ offsitebuddy_stale_client_legacy_compose_summaries | default([]) }}
+  loop_control:
+    loop_var: legacy_project
+    label: "{{ legacy_project.job_name }}"
+
+- name: Stop stale client Compose projects
+  vars:
+    current_client_job_names: >-
+      {{ offsitebuddy_client_jobs | map(attribute='name') | list }}
+    stale_job_name: "{{ item.path | dirname | basename }}"
+  community.docker.docker_compose_v2:
+    project_src: "{{ item.path | dirname }}"
+    project_name: "offsitebuddy-client-{{ stale_job_name }}"
+    files:
+      - compose.yaml
+    state: absent
+    remove_orphans: true
+  loop: "{{ offsitebuddy_client_managed_markers.files | default([]) }}"
+  loop_control:
+    label: "{{ stale_job_name }}"
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - item.path | dirname | dirname == offsitebuddy_client_root
+    - stale_job_name not in current_client_job_names
+
+- name: Remove stale client unit files
+  vars:
+    current_client_job_names: >-
+      {{ offsitebuddy_client_jobs | map(attribute='name') | list }}
+    stale_job_name: "{{ item.0.path | dirname | basename }}"
+  ansible.builtin.file:
+    path: >-
+      /etc/systemd/system/offsitebuddy-{{ item.1 }}-{{ stale_job_name
+      }}.{{ item.2 }}
+    state: absent
+  loop: >-
+    {{
+      (offsitebuddy_client_managed_markers.files | default([]))
+      | product(['backup', 'check'], ['service', 'timer'])
+      | list
+    }}
+  loop_control:
+    label: "{{ stale_job_name }} {{ item.1 }} {{ item.2 }}"
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - item.0.path | dirname | dirname == offsitebuddy_client_root
+    - stale_job_name not in current_client_job_names
+  notify: Reload systemd
+
+- name: Remove stale client job directories
+  vars:
+    current_client_job_names: >-
+      {{ offsitebuddy_client_jobs | map(attribute='name') | list }}
+    stale_job_name: "{{ item.path | dirname | basename }}"
+  ansible.builtin.file:
+    path: "{{ item.path | dirname }}"
+    state: absent
+  loop: "{{ offsitebuddy_client_managed_markers.files | default([]) }}"
+  loop_control:
+    label: "{{ stale_job_name }}"
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - item.path | dirname | dirname == offsitebuddy_client_root
+    - stale_job_name not in current_client_job_names

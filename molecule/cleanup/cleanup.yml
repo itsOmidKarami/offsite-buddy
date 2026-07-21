@@ -1,0 +1,45 @@
+---
+- name: Remove owned cleanup fixtures from the shared Docker daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  environment:
+    DOCKER_HOST: >-
+      {{ lookup('env', 'MOLECULE_CLEANUP_DOCKER_HOST') |
+      default('unix:///var/run/docker.sock', true) }}
+  vars:
+    cleanup_fixture_label: >-
+      offsitebuddy.cleanup-fixture=offsitebuddy-cleanup
+  tasks:
+    - name: Find owned cleanup fixture resources
+      community.docker.docker_host_info:
+        containers: true
+        containers_all: true
+        containers_filters:
+          label: "{{ cleanup_fixture_label }}"
+        networks: true
+        networks_filters:
+          label: "{{ cleanup_fixture_label }}"
+      register: owned_cleanup_fixture_resources
+      no_log: true
+
+    - name: Remove owned cleanup fixture containers
+      community.docker.docker_container:
+        name: "{{ fixture_container.Id }}"
+        state: absent
+        force_kill: true
+      loop: "{{ owned_cleanup_fixture_resources.containers }}"
+      loop_control:
+        loop_var: fixture_container
+        label: owned cleanup fixture
+      no_log: true
+
+    - name: Remove owned cleanup fixture networks
+      community.docker.docker_network:
+        name: "{{ fixture_network.Name }}"
+        state: absent
+      loop: "{{ owned_cleanup_fixture_resources.networks }}"
+      loop_control:
+        loop_var: fixture_network
+        label: owned cleanup fixture
+      no_log: true

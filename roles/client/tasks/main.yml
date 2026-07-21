@@ -2,8 +2,17 @@
 - name: Validate OffsiteBuddy client configuration
   ansible.builtin.import_tasks: validate.yml
 
+- name: Check client Compose project migration safety
+  ansible.builtin.import_tasks: compose_preflight.yml
+
 - name: Prepare client Docker Compose directories
   ansible.builtin.import_tasks: docker.yml
+
+- name: Remove stale client jobs before current convergence
+  ansible.builtin.import_tasks: cleanup.yml
+
+- name: Check client Compose project identity ownership
+  ansible.builtin.import_tasks: project_identity_preflight.yml
 
 - name: Render restic jobs
   ansible.builtin.import_tasks: restic.yml

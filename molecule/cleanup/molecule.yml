@@ -1,0 +1,29 @@
+---
+dependency:
+  name: galaxy
+  options:
+    requirements-file: requirements-dev.yml
+driver:
+  name: docker
+platforms:
+  - name: offsitebuddy-cleanup
+    image: geerlingguy/docker-debian12-ansible:latest
+    command: /lib/systemd/systemd
+    privileged: true
+    cgroupns_mode: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ${DOCKER_SOCKET_VOLUME:-/var/run/docker.sock:/docker.sock}
+    pre_build_image: true
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      roles_path: ${MOLECULE_PROJECT_DIRECTORY}/roles
+  playbooks:
+    cleanup: cleanup.yml
+    prepare: prepare.yml
+    converge: converge.yml
+    side_effect: side_effect.yml
+verifier:
+  name: ansible

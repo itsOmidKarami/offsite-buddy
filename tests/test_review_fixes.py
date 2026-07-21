@@ -137,6 +137,10 @@ def main():
         "managed client root",
     ):
         assert snippet in validate, "missing client validation: %s" % snippet
+    assert "not offsitebuddy_cleanup_stale | bool or" in validate
+    assert "offsitebuddy_manage_systemd | bool" in validate
+    assert "offsitebuddy-client-" in validate
+    assert "intersect" in validate
     stat_task = validate.split("- name: Stat client backup paths", 1)[1].split(
         "- name: Assert client backup paths exist and are directories", 1
     )[0]
@@ -156,23 +160,184 @@ def main():
     assert "manual maintenance" in docs, "manual retention maintenance must be explicit"
 
     server_compose = read("roles/server/templates/compose.yaml.j2")
+    assert 'name: "offsitebuddy-friend-{{ friend.name }}"' in server_compose
     assert "TS_USERSPACE: \"false\"" in server_compose, "tailscale must use kernel networking"
     assert "devices:" in server_compose, "tailscale must map /dev/net/tun as a device"
     assert "NET_RAW" in server_compose, "tailscale should include NET_RAW capability"
     assert "type: bind" in server_compose, "server volumes should use long-form bind mounts"
     server_tasks = read("roles/server/tasks/rest_server.yml")
+    server_cleanup = read("roles/server/tasks/cleanup.yml")
+    assert 'project_name: "offsitebuddy-friend-{{ friend_name }}"' in server_tasks
+    assert (
+        'project_name: "offsitebuddy-friend-{{ stale_friend_name }}"'
+        in server_cleanup
+    )
+    assert "community.docker.docker_host_info" in server_tasks
+    assert "community.docker.docker_host_info" in server_cleanup
+    dependency_index = server_tasks.index(
+        "- name: Ensure server Python dependencies are installed"
+    )
+    legacy_query_index = server_tasks.index(
+        "- name: Check for legacy generic friend Compose projects"
+    )
+    legacy_refusal_index = server_tasks.index(
+        "- name: Refuse to replace legacy generic friend Compose projects"
+    )
+    first_friend_write_index = server_tasks.index(
+        "- name: Ensure friend stack directories exist"
+    )
+    assert dependency_index < legacy_query_index
+    assert legacy_query_index < legacy_refusal_index < first_friend_write_index
+    current_legacy_query = server_tasks.split(
+        "- name: Check for legacy generic friend Compose projects", 1
+    )[1].split("- name: Project current legacy Compose inspections", 1)[0]
+    current_legacy_init = server_tasks.split(
+        "- name: Initialize current legacy Compose summaries", 1
+    )[1].split("- name: Project current legacy Compose inspections", 1)[0]
+    current_legacy_projection = server_tasks.split(
+        "- name: Project current legacy Compose inspections", 1
+    )[1].split(
+        "- name: Refuse to replace legacy generic friend Compose projects", 1
+    )[0]
+    current_legacy_refusal = server_tasks.split(
+        "- name: Refuse to replace legacy generic friend Compose projects", 1
+    )[1].split("- name: Ensure friend stack directories exist", 1)[0]
+    assert "no_log: true" in current_legacy_query
+    assert "no_log: true" in current_legacy_projection
+    assert "offsitebuddy_start_services" not in current_legacy_query
+    assert "when:" not in current_legacy_init
+    assert "offsitebuddy_server_legacy_compose_inspections" in current_legacy_query
+    assert "offsitebuddy_server_legacy_compose_inspections" in (
+        current_legacy_projection
+    )
+    assert "offsitebuddy_server_legacy_compose_summaries" in current_legacy_refusal
+    assert "offsitebuddy_server_legacy_compose_inspections" not in current_legacy_refusal
+    assert "--project-name {{ legacy_project.friend_name }}" in current_legacy_refusal
+    assert "offsitebuddy_server_root ~ '/friends/' ~ legacy_project.friend_name" in (
+        current_legacy_refusal
+    )
+    assert "'/compose.yaml'" in current_legacy_refusal
+
+    stale_legacy_query = server_cleanup.split(
+        "- name: Check stale friends for legacy generic Compose projects", 1
+    )[1].split("- name: Project stale legacy Compose inspections", 1)[0]
+    stale_legacy_init = server_cleanup.split(
+        "- name: Initialize stale legacy Compose summaries", 1
+    )[1].split("- name: Project stale legacy Compose inspections", 1)[0]
+    stale_legacy_projection = server_cleanup.split(
+        "- name: Project stale legacy Compose inspections", 1
+    )[1].split(
+        "- name: Refuse to remove stale friends with legacy generic Compose projects",
+        1,
+    )[0]
+    stale_legacy_refusal = server_cleanup.split(
+        "- name: Refuse to remove stale friends with legacy generic Compose projects",
+        1,
+    )[1].split("- name: Stop stale friend server stacks", 1)[0]
+    assert "no_log: true" in stale_legacy_query
+    assert "no_log: true" in stale_legacy_projection
+    assert "when:" not in stale_legacy_init
+    assert "offsitebuddy_stale_legacy_compose_inspections" in stale_legacy_query
+    assert "offsitebuddy_stale_legacy_compose_inspections" in (
+        stale_legacy_projection
+    )
+    assert "offsitebuddy_stale_legacy_compose_summaries" in stale_legacy_refusal
+    assert "offsitebuddy_stale_legacy_compose_inspections" not in stale_legacy_refusal
+    assert "--project-name {{ legacy_project.friend_name }}" in stale_legacy_refusal
+    assert "offsitebuddy_server_root ~ '/friends/' ~ legacy_project.friend_name" in (
+        stale_legacy_refusal
+    )
+    assert "'/compose.yaml'" in stale_legacy_refusal
     assert "python3-passlib" in server_tasks, "server role must install passlib for htpasswd"
     assert ".offsitebuddy-managed" in server_tasks, "server role must mark managed stacks"
-    assert "offsitebuddy_cleanup_stale" in server_tasks, "server role must support stale cleanup"
-    assert "state: absent" in server_tasks, "server stale cleanup must stop old stacks"
+    assert "offsitebuddy_cleanup_stale" in server_cleanup, "server role must support stale cleanup"
+    assert "state: absent" in server_cleanup, "server stale cleanup must stop old stacks"
     assert "state: restarted" not in server_tasks, (
         "changed server files must converge with Compose up, not restart"
     )
     converge_task = server_tasks.split(
         "- name: Converge per-friend server stacks", 1
-    )[1].split("- name: Find managed friend stack markers", 1)[0]
+    )[1]
     assert "state: present" in converge_task, "server stacks must converge with up -d"
     assert "pull: missing" in converge_task, "server convergence must retain pull behavior"
+    server_find = server_cleanup.split("- name: Find managed friend stack markers", 1)[1].split(
+        "- name: Stop stale friend server stacks", 1
+    )[0]
+    assert "recurse: true" in server_find
+    assert "depth: 2" in server_find
+    assert "hidden: true" in server_find
+    assert (
+        "item.path | dirname | dirname == offsitebuddy_server_root ~ '/friends'"
+        in server_cleanup
+    )
+    assert server_cleanup.index("Stop stale friend server stacks") < server_cleanup.index(
+        "Remove stale friend stack directories"
+    )
+    stale_stop_task = server_cleanup.split(
+        "- name: Stop stale friend server stacks", 1
+    )[1].split("- name: Remove stale friend stack directories", 1)[0]
+    assert "files:" in stale_stop_task
+    assert "- compose.yaml" in stale_stop_task
+    assert server_tasks.index(
+        "Refuse to replace legacy generic friend Compose projects"
+    ) < server_tasks.index("cleanup.yml")
+    assert server_tasks.index("cleanup.yml") < server_tasks.index(
+        "project_identity_preflight.yml"
+    )
+    assert server_tasks.index("project_identity_preflight.yml") < server_tasks.index(
+        "Ensure friend stack directories exist"
+    )
+    server_identity_preflight = read(
+        "roles/server/tasks/project_identity_preflight.yml"
+    )
+    assert "Find managed friend markers for Compose identity preflight" in (
+        server_identity_preflight
+    )
+    assert "managed_friend_name not in current_project_names" in (
+        server_identity_preflight
+    )
+    assert "offsitebuddy_cleanup_stale" not in server_identity_preflight
+
+    server_readme = read("roles/server/README.md")
+    assert "before friend-specific files change" in server_readme
+    assert (
+        "docker compose --project-name <friend-name> --file "
+        "<managed-compose-path>/compose.yaml down"
+    ) in server_readme
+
+    cleanup_prepare = read("molecule/cleanup/prepare.yml")
+    cleanup_prepare_query = cleanup_prepare.split(
+        "- name: Check cleanup fixture project names are unused", 1
+    )[1].split("- name: Initialize cleanup fixture project summaries", 1)[0]
+    cleanup_prepare_projection = cleanup_prepare.split(
+        "- name: Project cleanup fixture inspections", 1
+    )[1].split("- name: Refuse to overwrite existing cleanup fixture projects", 1)[0]
+    assert "no_log: true" in cleanup_prepare_query
+    assert "no_log: true" in cleanup_prepare_projection
+    assert "container_count" in cleanup_prepare_projection
+    assert "network_count" in cleanup_prepare_projection
+
+    cleanup_side_effect = read("molecule/cleanup/side_effect.yml")
+    assert "legacy_teardown_root" in cleanup_side_effect
+    assert cleanup_side_effect.count(
+        'project_src: "{{ legacy_teardown_root }}"'
+    ) == 6
+    assert "Require server identity shadow refusal with cleanup disabled" in (
+        cleanup_side_effect
+    )
+    assert "Require client identity shadow refusal with cleanup disabled" in (
+        cleanup_side_effect
+    )
+    assert "Exercise stale client generic Compose refusal before deletion" in (
+        cleanup_side_effect
+    )
+
+    cleanup_molecule = read("molecule/cleanup/molecule.yml")
+    cleanup_playbook = read("molecule/cleanup/cleanup.yml")
+    assert "cleanup: cleanup.yml" in cleanup_molecule
+    assert "offsitebuddy.cleanup-fixture" in cleanup_playbook
+    assert "offsitebuddy.cleanup-fixture" in cleanup_prepare
+    assert cleanup_side_effect.count("offsitebuddy.cleanup-fixture") == 12
 
     server_validate = read("roles/server/tasks/validate.yml")
     assert "offsitebuddy_friends | map(attribute='name')" in server_validate, "server friend names must be unique"
@@ -197,6 +362,9 @@ def main():
         "Validate friend quota paths do not overlap each other",
     ):
         assert snippet in server_validate, "missing server validation: %s" % snippet
+    assert "not offsitebuddy_cleanup_stale | bool or offsitebuddy_start_services | bool" in server_validate
+    assert "offsitebuddy-friend-" in server_validate
+    assert "intersect" in server_validate
 
     quota_validate = read("roles/quota/tasks/main.yml")
     assert "item.path | regex_search('^/')" in quota_validate, (
@@ -367,12 +535,119 @@ def main():
     )
     assert initial_backup_result.returncode == 0, initial_backup_output
 
-    client_systemd = read("roles/client/tasks/systemd.yml")
-    assert "offsitebuddy_cleanup_stale" in client_systemd, "client role must support stale cleanup"
-    assert "offsitebuddy-backup-{{ stale_job_name }}.timer" in client_systemd, (
-        "stale backup timers must be stopped"
+    client_cleanup = read("roles/client/tasks/cleanup.yml")
+    assert "LoadState" in client_cleanup
+    assert "ActiveState" in client_cleanup
+    assert "not-found" in client_cleanup
+    client_find = client_cleanup.split("- name: Find managed client job markers", 1)[1].split(
+        "- name: Query stale client unit states", 1
+    )[0]
+    assert "offsitebuddy_cleanup_stale" in client_cleanup, "client role must support stale cleanup"
+    assert "{'kind': 'backup', 'unit_type': 'timer'}" in client_cleanup, (
+        "stale backup timers must be checked and stopped"
     )
-    assert "state: absent" in client_systemd, "stale unit files must be removed"
+    assert "state: absent" in client_cleanup, "stale unit files must be removed"
+    assert "recurse: true" in client_cleanup
+    assert "depth: 2" in client_cleanup
+    assert "hidden: true" in client_find
+    assert "item.path | dirname | dirname == offsitebuddy_client_root" in client_cleanup
+    assert "failed_when: false" not in client_cleanup
+    assert client_cleanup.index("Stop loaded stale client units") < client_cleanup.index(
+        "Remove stale client job directories"
+    )
+    assert client_cleanup.index("Stop stale client Compose projects") < (
+        client_cleanup.index("Remove stale client job directories")
+    )
+    assert 'project_name: "offsitebuddy-client-{{ stale_job_name }}"' in (
+        client_cleanup
+    )
+    assert "Refuse to remove stale jobs with legacy generic Compose projects" in (
+        client_cleanup
+    )
+    assert "Stop unloaded active stale client units" in client_cleanup
+    assert "systemctl" in client_cleanup
+    assert "stop" in client_cleanup
+    assert "Verify stale client units are inactive" in client_cleanup
+    inactive_verify = client_cleanup.split(
+        "- name: Verify stale client units are inactive", 1
+    )[1].split("- name: Check stale jobs for legacy generic Compose projects", 1)[0]
+    assert "rc != 0" in inactive_verify
+
+    client_main = read("roles/client/tasks/main.yml")
+    assert "compose_preflight.yml" in client_main
+    assert client_main.index("compose_preflight.yml") < client_main.index("cleanup.yml")
+    assert client_main.index("cleanup.yml") < client_main.index(
+        "project_identity_preflight.yml"
+    )
+    assert client_main.index("project_identity_preflight.yml") < client_main.index(
+        "restic.yml"
+    )
+    client_identity_preflight = read(
+        "roles/client/tasks/project_identity_preflight.yml"
+    )
+    assert "Find managed client markers for Compose identity preflight" in (
+        client_identity_preflight
+    )
+    assert "managed_job_name not in current_project_names" in (
+        client_identity_preflight
+    )
+    assert "offsitebuddy_cleanup_stale" not in client_identity_preflight
+    client_preflight = read("roles/client/tasks/compose_preflight.yml")
+    assert "community.docker.docker_host_info" in client_preflight
+    assert "/etc/debian_version" in client_preflight
+    client_dependency_install = client_preflight.split(
+        "- name: Ensure client Python dependencies are installed", 1
+    )[1].split("- name: Check for legacy generic client Compose projects", 1)[0]
+    assert "become: true" in client_dependency_install
+    assert "offsitebuddy_client_debian.stat.exists" in client_dependency_install
+    assert "Refuse to replace legacy generic client Compose projects" in (
+        client_preflight
+    )
+    assert "offsitebuddy-backup-{{ legacy_project.job_name }}.timer" in (
+        client_preflight
+    )
+    assert "offsitebuddy-check-{{ legacy_project.job_name }}.timer" in (
+        client_preflight
+    )
+    assert "services are inactive" in client_preflight
+    assert "no_log: true" in client_preflight
+    client_readme = read("roles/client/README.md")
+    assert "before job-specific files change" in client_readme
+    assert "backup sources" in client_readme.lower()
+    assert "repository data are never removed" in client_readme.lower()
+    assert "stop and disable any existing backup/check timers" in (
+        client_readme.lower()
+    )
+    assert (
+        "docker compose --project-name <job-name> --file "
+        "<managed-compose-path>/compose.yaml down"
+    ) in client_readme
+
+    default_molecule = read("molecule/default/molecule.yml")
+    assert "DOCKER_SOCKET_VOLUME" in default_molecule
+    cleanup_molecule = read("molecule/cleanup/molecule.yml")
+    assert "/var/run/docker.sock:/docker.sock" in cleanup_molecule
+    for cleanup_playbook in (
+        "molecule/cleanup/prepare.yml",
+        "molecule/cleanup/converge.yml",
+        "molecule/cleanup/side_effect.yml",
+        "molecule/cleanup/verify.yml",
+    ):
+        assert "default('unix:///docker.sock', true)" in read(cleanup_playbook)
+    assert "current_client_legacy_job" in cleanup_side_effect
+    assert "Refuse to replace legacy generic client Compose projects" in (
+        cleanup_side_effect
+    )
+    current_client_migration = cleanup_side_effect.split(
+        "- name: Exercise current client generic Compose refusal before job writes",
+        1,
+    )[1].split(
+        "- name: Exercise current generic Compose refusal before friend writes",
+        1,
+    )[0]
+    assert "offsitebuddy_start_services: true" in current_client_migration
+    assert "offsitebuddy_manage_systemd: true" in current_client_migration
+    assert "cleanup_fixture_project_names" in cleanup_side_effect
 
     for path, collection_variable in (
         ("roles/client/tasks/validate.yml", "offsitebuddy_client_jobs"),
@@ -387,6 +662,7 @@ def main():
     assert_client_validation_output_is_redacted()
 
     client_compose = read("roles/client/templates/compose.yaml.j2")
+    assert 'name: "offsitebuddy-client-{{ job.name }}"' in client_compose
     assert "type: bind" in client_compose, "client volumes should use long-form bind mounts"
     for snippet in (
         "image: \"{{ offsitebuddy_tailscale_image }}\"",

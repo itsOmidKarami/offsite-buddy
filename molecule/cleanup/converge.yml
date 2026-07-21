@@ -1,0 +1,34 @@
+---
+- name: Converge stale cleanup lifecycle
+  hosts: all
+  become: true
+  environment:
+    DOCKER_HOST: >-
+      {{ lookup('env', 'MOLECULE_DOCKER_HOST') |
+      default('unix:///docker.sock', true) }}
+  vars:
+    retained_name: "cleanup-retained-{{ ansible_facts['hostname'] }}"
+    offsitebuddy_server_root: /srv/offsitebuddy
+    offsitebuddy_client_root: /etc/offsitebuddy/jobs
+    offsitebuddy_cleanup_stale: true
+    offsitebuddy_start_services: true
+    offsitebuddy_manage_systemd: true
+    offsitebuddy_friends:
+      - name: "{{ retained_name }}"
+    offsitebuddy_client_jobs:
+      - name: "{{ retained_name }}"
+  tasks:
+    - name: Run server stale cleanup tasks
+      ansible.builtin.include_tasks: >-
+        {{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY')
+        }}/roles/server/tasks/cleanup.yml
+
+    - name: Run client stale cleanup tasks
+      ansible.builtin.include_tasks: >-
+        {{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY')
+        }}/roles/client/tasks/cleanup.yml
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true

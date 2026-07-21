@@ -58,6 +58,8 @@ jobs:
           )"
           uv run molecule verify --no-report \
             2> >(grep -v -F "$molecule_schema_filter" >&2)
+      - name: Run stale cleanup lifecycle
+        run: uv run molecule test -s cleanup --no-report
       - name: Run negative validation checks
         run: >-
           uv run ansible-playbook -i localhost, -c local
