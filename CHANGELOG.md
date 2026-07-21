@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.9](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.8...v0.1.9) (2026-07-21)
+
+
+### Bug Fixes
+
+* fail closed on stale cleanup ([#28](https://github.com/itsOmidKarami/offsite-buddy/issues/28)) ([c26c150](https://github.com/itsOmidKarami/offsite-buddy/commit/c26c1508776f0f745f3b5fad51b0946c1ed0c3f9))
+
 ## [0.1.8](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.7...v0.1.8) (2026-07-20)
 
 
