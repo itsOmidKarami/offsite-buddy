@@ -1,4 +1,9 @@
 ---
+- name: Check whether the client uses Debian packages
+  ansible.builtin.stat:
+    path: /etc/debian_version
+  register: offsitebuddy_client_debian
+
 - name: Ensure client Python dependencies are installed
   become: true
   ansible.builtin.apt:
@@ -7,6 +12,7 @@
     state: present
     update_cache: true
     cache_valid_time: 3600
+  when: offsitebuddy_client_debian.stat.exists
 
 - name: Check for legacy generic client Compose projects
   community.docker.docker_host_info:
@@ -56,7 +62,12 @@
     fail_msg: >-
       Legacy Compose project {{ legacy_project.job_name }} exists
       ({{ legacy_project.container_count }} containers,
-      {{ legacy_project.network_count }} networks). Inspect it and run
+      {{ legacy_project.network_count }} networks). Stop and disable any
+      existing offsitebuddy-backup-{{ legacy_project.job_name }}.timer and
+      offsitebuddy-check-{{ legacy_project.job_name }}.timer units, stop any
+      active offsitebuddy-backup-{{ legacy_project.job_name }}.service and
+      offsitebuddy-check-{{ legacy_project.job_name }}.service units, and
+      verify those services are inactive. Then inspect the project and run
       docker compose --project-name {{ legacy_project.job_name }}
       --file {{
         offsitebuddy_client_root ~ '/' ~ legacy_project.job_name ~

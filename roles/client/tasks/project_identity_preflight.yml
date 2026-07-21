@@ -21,8 +21,7 @@
       }}
   ansible.builtin.assert:
     that:
-      - >-
-        [managed_job_name] | intersect(current_project_names) | length == 0
+      - managed_job_name not in current_project_names
     fail_msg: >-
       Managed client job {{ managed_job_name }} conflicts with a current
       Compose project identity. Stop and migrate its legacy generic Compose

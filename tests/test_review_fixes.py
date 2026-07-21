@@ -293,7 +293,9 @@ def main():
     assert "Find managed friend markers for Compose identity preflight" in (
         server_identity_preflight
     )
-    assert "intersect" in server_identity_preflight
+    assert "managed_friend_name not in current_project_names" in (
+        server_identity_preflight
+    )
     assert "offsitebuddy_cleanup_stale" not in server_identity_preflight
 
     server_readme = read("roles/server/README.md")
@@ -586,20 +588,36 @@ def main():
     assert "Find managed client markers for Compose identity preflight" in (
         client_identity_preflight
     )
-    assert "intersect" in client_identity_preflight
+    assert "managed_job_name not in current_project_names" in (
+        client_identity_preflight
+    )
     assert "offsitebuddy_cleanup_stale" not in client_identity_preflight
     client_preflight = read("roles/client/tasks/compose_preflight.yml")
     assert "community.docker.docker_host_info" in client_preflight
+    assert "/etc/debian_version" in client_preflight
     client_dependency_install = client_preflight.split(
         "- name: Ensure client Python dependencies are installed", 1
     )[1].split("- name: Check for legacy generic client Compose projects", 1)[0]
     assert "become: true" in client_dependency_install
+    assert "offsitebuddy_client_debian.stat.exists" in client_dependency_install
     assert "Refuse to replace legacy generic client Compose projects" in (
         client_preflight
     )
+    assert "offsitebuddy-backup-{{ legacy_project.job_name }}.timer" in (
+        client_preflight
+    )
+    assert "offsitebuddy-check-{{ legacy_project.job_name }}.timer" in (
+        client_preflight
+    )
+    assert "services are inactive" in client_preflight
     assert "no_log: true" in client_preflight
     client_readme = read("roles/client/README.md")
     assert "before job-specific files change" in client_readme
+    assert "backup sources" in client_readme.lower()
+    assert "repository data are never removed" in client_readme.lower()
+    assert "stop and disable any existing backup/check timers" in (
+        client_readme.lower()
+    )
     assert (
         "docker compose --project-name <job-name> --file "
         "<managed-compose-path>/compose.yaml down"
@@ -620,6 +638,15 @@ def main():
     assert "Refuse to replace legacy generic client Compose projects" in (
         cleanup_side_effect
     )
+    current_client_migration = cleanup_side_effect.split(
+        "- name: Exercise current client generic Compose refusal before job writes",
+        1,
+    )[1].split(
+        "- name: Exercise current generic Compose refusal before friend writes",
+        1,
+    )[0]
+    assert "offsitebuddy_start_services: true" in current_client_migration
+    assert "offsitebuddy_manage_systemd: true" in current_client_migration
     assert "cleanup_fixture_project_names" in cleanup_side_effect
 
     for path, collection_variable in (

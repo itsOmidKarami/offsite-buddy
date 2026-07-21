@@ -584,8 +584,8 @@
               vars:
                 offsitebuddy_client_root: "{{ current_client_legacy_root }}"
                 offsitebuddy_cleanup_stale: false
-                offsitebuddy_start_services: false
-                offsitebuddy_manage_systemd: false
+                offsitebuddy_start_services: true
+                offsitebuddy_manage_systemd: true
                 offsitebuddy_client_jobs:
                   - name: "{{ current_client_legacy_job }}"
                     repository: rest:http://127.0.0.1:8000/repository
@@ -615,6 +615,20 @@
                     (ansible_failed_result | to_json) is search(
                       '--file ' ~ current_client_legacy_root ~ '/' ~
                       current_client_legacy_job ~ '/compose.yaml down'
+                    )
+                  - >-
+                    (ansible_failed_result | to_json) is search(
+                      'offsitebuddy-backup-' ~ current_client_legacy_job ~
+                      '.timer'
+                    )
+                  - >-
+                    (ansible_failed_result | to_json) is search(
+                      'offsitebuddy-check-' ~ current_client_legacy_job ~
+                      '.timer'
+                    )
+                  - >-
+                    (ansible_failed_result | to_json) is search(
+                      'services are inactive'
                     )
 
         - name: Check current client files after migration refusal
