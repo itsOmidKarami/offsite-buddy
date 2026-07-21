@@ -1,0 +1,1450 @@
+---
+- name: Exercise stale cleanup failure preservation
+  hosts: all
+  become: true
+  environment:
+    DOCKER_HOST: >-
+      {{ lookup('env', 'MOLECULE_DOCKER_HOST') |
+      default('unix:///docker.sock', true) }}
+  vars:
+    server_validation_root: >-
+      /srv/offsitebuddy-cleanup-side-effect/server-validation
+    client_validation_root: >-
+      /etc/offsitebuddy-cleanup-side-effect/client-validation
+    current_legacy_root: >-
+      /srv/offsitebuddy-cleanup-side-effect/current-legacy
+    current_legacy_friend: >-
+      cleanup-current-legacy-{{ ansible_facts['hostname'] }}
+    current_legacy_quota: >-
+      /tmp/offsitebuddy-cleanup-side-effect-current-legacy-quota
+    current_client_legacy_root: >-
+      /etc/offsitebuddy-cleanup-side-effect/current-client-legacy
+    current_client_legacy_job: >-
+      cleanup-current-client-legacy-{{ ansible_facts['hostname'] }}
+    current_client_legacy_source: >-
+      /tmp/offsitebuddy-cleanup-side-effect-current-client-source
+    server_shadow_root: >-
+      /srv/offsitebuddy-cleanup-side-effect/server-shadow
+    server_shadow_current: >-
+      cleanup-shadow-server-current-{{ ansible_facts['hostname'] }}
+    server_shadow_legacy: "offsitebuddy-friend-{{ server_shadow_current }}"
+    server_shadow_quota: >-
+      /tmp/offsitebuddy-cleanup-side-effect-server-shadow-quota
+    client_shadow_root: >-
+      /etc/offsitebuddy-cleanup-side-effect/client-shadow
+    client_shadow_current: >-
+      cleanup-shadow-client-current-{{ ansible_facts['hostname'] }}
+    client_shadow_legacy: "offsitebuddy-client-{{ client_shadow_current }}"
+    client_shadow_source: >-
+      /tmp/offsitebuddy-cleanup-side-effect-client-shadow-source
+    stale_legacy_root: >-
+      /srv/offsitebuddy-cleanup-side-effect/stale-legacy
+    stale_legacy_friend: >-
+      cleanup-stale-legacy-{{ ansible_facts['hostname'] }}
+    stale_client_legacy_root: >-
+      /etc/offsitebuddy-cleanup-side-effect/stale-client-legacy
+    stale_client_legacy_job: >-
+      cleanup-stale-client-legacy-{{ ansible_facts['hostname'] }}
+    legacy_teardown_root: /tmp/offsitebuddy-cleanup-side-effect-teardown
+    server_stop_failure_root: >-
+      /srv/offsitebuddy-cleanup-side-effect/server-stop-failure
+    client_stop_failure_root: >-
+      /etc/offsitebuddy-cleanup-side-effect/client-stop-failure
+    server_stop_failure_friend: >-
+      cleanup-invalid-compose-{{ ansible_facts['hostname'] }}
+    client_stop_failure_job: >-
+      cleanup-refuse-stop-{{ ansible_facts['hostname'] }}
+    client_unloaded_active_root: >-
+      /etc/offsitebuddy-cleanup-side-effect/client-unloaded-active
+    client_unloaded_active_job: >-
+      cleanup-unloaded-active-{{ ansible_facts['hostname'] }}
+    cleanup_fixture_project_names:
+      - "{{ current_legacy_friend }}"
+      - "{{ stale_legacy_friend }}"
+      - "{{ current_client_legacy_job }}"
+      - "{{ stale_client_legacy_job }}"
+      - "{{ server_shadow_legacy }}"
+      - "{{ client_shadow_legacy }}"
+      - "offsitebuddy-client-{{ client_unloaded_active_job }}"
+  tasks:
+    - name: Create validation sentinel directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ server_validation_root }}/friends/stale"
+        - "{{ client_validation_root }}/stale"
+
+    - name: Create validation sentinels and managed markers
+      ansible.builtin.copy:
+        dest: "{{ item }}"
+        content: preserved
+        mode: "0600"
+      loop:
+        - "{{ server_validation_root }}/friends/stale/.offsitebuddy-managed"
+        - "{{ server_validation_root }}/friends/stale/sentinel"
+        - "{{ client_validation_root }}/stale/.offsitebuddy-managed"
+        - "{{ client_validation_root }}/stale/sentinel"
+
+    - name: Require server main to reject unsafe cleanup before side effects
+      block:
+        - name: Invoke server main with unsafe cleanup configuration
+          ansible.builtin.include_role:
+            name: server
+            tasks_from: main.yml
+          vars:
+            offsitebuddy_server_root: "{{ server_validation_root }}"
+            offsitebuddy_friends: []
+            offsitebuddy_cleanup_stale: true
+            offsitebuddy_start_services: false
+
+        - name: Fail if unsafe server cleanup passes validation
+          ansible.builtin.fail:
+            msg: Unsafe server cleanup unexpectedly passed validation.
+      rescue:
+        - name: Assert server cleanup failed at validation
+          ansible.builtin.assert:
+            that:
+              - >-
+                ansible_failed_task.name is search(
+                  'Validate stale server cleanup can stop managed stacks'
+                )
+              - >-
+                ansible_failed_result.msg is search(
+                  'offsitebuddy_cleanup_stale requires'
+                )
+
+    - name: Require client main to reject unsafe cleanup before side effects
+      block:
+        - name: Invoke client main with unsafe cleanup configuration
+          ansible.builtin.include_role:
+            name: client
+            tasks_from: main.yml
+          vars:
+            offsitebuddy_client_root: "{{ client_validation_root }}"
+            offsitebuddy_client_jobs: []
+            offsitebuddy_cleanup_stale: true
+            offsitebuddy_start_services: false
+            offsitebuddy_manage_systemd: true
+
+        - name: Fail if unsafe client cleanup passes validation
+          ansible.builtin.fail:
+            msg: Unsafe client cleanup unexpectedly passed validation.
+      rescue:
+        - name: Assert client cleanup failed at validation
+          ansible.builtin.assert:
+            that:
+              - >-
+                ansible_failed_task.name is search(
+                  'Validate stale client cleanup can stop managed units'
+                )
+              - >-
+                ansible_failed_result.msg is search(
+                  'offsitebuddy_cleanup_stale requires'
+                )
+
+    - name: Check validation sentinels after rejected role runs
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ server_validation_root }}/friends/stale/sentinel"
+        - "{{ client_validation_root }}/stale/sentinel"
+      register: validation_sentinels
+
+    - name: Verify validation failures preserved sentinels
+      ansible.builtin.assert:
+        that:
+          - validation_sentinels.results | map(attribute='stat.exists') | min
+
+    - name: Create external legacy fixture teardown directory
+      ansible.builtin.file:
+        path: "{{ legacy_teardown_root }}"
+        state: directory
+        mode: "0755"
+
+    - name: Create external legacy fixture teardown definition
+      ansible.builtin.copy:
+        dest: "{{ legacy_teardown_root }}/compose.yaml"
+        mode: "0600"
+        content: |
+          ---
+          services:
+            fixture:
+              image: alpine:3.20
+              command: ["sleep", "infinity"]
+
+    - name: Check side-effect fixture project names are unused
+      community.docker.docker_host_info:
+        containers: true
+        containers_all: true
+        containers_filters:
+          label: "com.docker.compose.project={{ project_name }}"
+        networks: true
+        networks_filters:
+          label: "com.docker.compose.project={{ project_name }}"
+      loop: "{{ cleanup_fixture_project_names }}"
+      loop_control:
+        loop_var: project_name
+        label: "{{ project_name }}"
+      register: cleanup_fixture_project_inspections
+      no_log: true
+
+    - name: Initialize side-effect fixture project summaries
+      ansible.builtin.set_fact:
+        cleanup_fixture_project_summaries: []
+      no_log: true
+
+    - name: Project side-effect fixture inspections
+      ansible.builtin.set_fact:
+        cleanup_fixture_project_summaries: >-
+          {{
+            cleanup_fixture_project_summaries +
+            [{
+              'project_name': fixture_inspection.project_name,
+              'container_count': fixture_inspection.containers | length,
+              'network_count': fixture_inspection.networks | length
+            }]
+          }}
+      loop: "{{ cleanup_fixture_project_inspections.results }}"
+      loop_control:
+        loop_var: fixture_inspection
+        label: "{{ fixture_inspection.project_name }}"
+      no_log: true
+
+    - name: Refuse to overwrite side-effect fixture projects
+      ansible.builtin.assert:
+        that:
+          - fixture_project.container_count == 0
+          - fixture_project.network_count == 0
+        fail_msg: >-
+          Cleanup fixture project {{ fixture_project.project_name }} already
+          exists on the Docker daemon; refusing to alter it.
+      loop: "{{ cleanup_fixture_project_summaries }}"
+      loop_control:
+        loop_var: fixture_project
+        label: "{{ fixture_project.project_name }}"
+
+    - name: Exercise server identity shadow refusal with cleanup disabled
+      block:
+        - name: Create server identity shadow directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            mode: "0755"
+          loop:
+            - >-
+              {{ server_shadow_root }}/friends/{{ server_shadow_legacy }}
+            - "{{ server_shadow_quota }}"
+
+        - name: Create server identity shadow managed files
+          ansible.builtin.copy:
+            dest: >-
+              {{ server_shadow_root }}/friends/{{ server_shadow_legacy
+              }}/{{ item }}
+            content: preserved
+            mode: "0600"
+          loop:
+            - .offsitebuddy-managed
+            - sentinel
+
+        - name: Create server identity shadow Compose definition
+          ansible.builtin.copy:
+            dest: >-
+              {{ server_shadow_root }}/friends/{{ server_shadow_legacy
+              }}/compose.yaml
+            mode: "0600"
+            content: |
+              ---
+              services:
+                fixture:
+                  image: alpine:3.20
+                  command: ["sleep", "infinity"]
+                  labels:
+                    offsitebuddy.cleanup-fixture: >-
+                      {{ ansible_facts['hostname'] }}
+              networks:
+                default:
+                  labels:
+                    offsitebuddy.cleanup-fixture: >-
+                      {{ ansible_facts['hostname'] }}
+
+        - name: Start server identity shadow Compose project
+          community.docker.docker_compose_v2:
+            project_src: >-
+              {{ server_shadow_root }}/friends/{{ server_shadow_legacy }}
+            project_name: "{{ server_shadow_legacy }}"
+            files:
+              - compose.yaml
+            state: present
+
+        - name: Record server identity shadow Compose checksum
+          ansible.builtin.stat:
+            path: >-
+              {{ server_shadow_root }}/friends/{{ server_shadow_legacy
+              }}/compose.yaml
+            get_checksum: true
+          register: server_shadow_compose_before
+
+        - name: Require server identity shadow refusal with cleanup disabled
+          block:
+            - name: Invoke server main against a managed identity shadow
+              ansible.builtin.include_role:
+                name: server
+                tasks_from: main.yml
+              vars:
+                offsitebuddy_server_root: "{{ server_shadow_root }}"
+                offsitebuddy_cleanup_stale: false
+                offsitebuddy_start_services: true
+                offsitebuddy_friends:
+                  - name: "{{ server_shadow_current }}"
+                    quota:
+                      path: "{{ server_shadow_quota }}"
+                      enforced: true
+                      enforcement_note: Molecule identity shadow fixture
+                    tailscale:
+                      hostname: "{{ server_shadow_current }}"
+                      auth_key: tskey-auth-server-shadow-fixture
+                    rest_server:
+                      username: cleanup-server-shadow
+                      password: cleanup-server-shadow-fixture
+
+            - name: Fail if server identity shadow is accepted
+              ansible.builtin.fail:
+                msg: Server identity shadow unexpectedly passed preflight.
+          rescue:
+            - name: Assert server identity shadow refusal is safe
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    ansible_failed_task.name is search(
+                      'Refuse managed friend names that shadow current '
+                      'Compose projects'
+                    )
+                  - >-
+                    (ansible_failed_result | to_json) is search(
+                      server_shadow_legacy
+                    )
+
+        - name: Check server identity shadow state after refusal
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            get_checksum: true
+          loop:
+            - >-
+              {{ server_shadow_root }}/friends/{{ server_shadow_current }}
+            - >-
+              {{ server_shadow_root }}/friends/{{ server_shadow_legacy
+              }}/.offsitebuddy-managed
+            - >-
+              {{ server_shadow_root }}/friends/{{ server_shadow_legacy
+              }}/sentinel
+            - >-
+              {{ server_shadow_root }}/friends/{{ server_shadow_legacy
+              }}/compose.yaml
+          register: server_shadow_files
+
+        - name: Verify server identity shadow refusal preceded writes
+          ansible.builtin.assert:
+            that:
+              - not server_shadow_files.results[0].stat.exists
+              - server_shadow_files.results[1].stat.exists
+              - server_shadow_files.results[2].stat.exists
+              - >-
+                server_shadow_files.results[3].stat.checksum ==
+                server_shadow_compose_before.stat.checksum
+      always:
+        - name: Tear down server identity shadow fixture
+          community.docker.docker_compose_v2:
+            project_src: "{{ legacy_teardown_root }}"
+            project_name: "{{ server_shadow_legacy }}"
+            files:
+              - compose.yaml
+            state: absent
+            remove_orphans: true
+
+        - name: Inspect server identity shadow fixture resources
+          community.docker.docker_host_info:
+            containers: true
+            containers_all: true
+            containers_filters:
+              label: "com.docker.compose.project={{ server_shadow_legacy }}"
+            networks: true
+            networks_filters:
+              label: "com.docker.compose.project={{ server_shadow_legacy }}"
+          register: server_shadow_fixture_resources
+
+        - name: Verify server identity shadow fixture did not leak
+          ansible.builtin.assert:
+            that:
+              - server_shadow_fixture_resources.containers | length == 0
+              - server_shadow_fixture_resources.networks | length == 0
+
+    - name: Exercise client identity shadow refusal with cleanup disabled
+      block:
+        - name: Create client identity shadow directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            mode: "0755"
+          loop:
+            - "{{ client_shadow_root }}/{{ client_shadow_legacy }}"
+            - "{{ client_shadow_source }}"
+
+        - name: Create client identity shadow managed files
+          ansible.builtin.copy:
+            dest: >-
+              {{ client_shadow_root }}/{{ client_shadow_legacy }}/{{ item }}
+            content: preserved
+            mode: "0600"
+          loop:
+            - .offsitebuddy-managed
+            - sentinel
+
+        - name: Create client identity shadow Compose definition
+          ansible.builtin.copy:
+            dest: >-
+              {{ client_shadow_root }}/{{ client_shadow_legacy }}/compose.yaml
+            mode: "0600"
+            content: |
+              ---
+              services:
+                fixture:
+                  image: alpine:3.20
+                  command: ["sleep", "infinity"]
+                  labels:
+                    offsitebuddy.cleanup-fixture: >-
+                      {{ ansible_facts['hostname'] }}
+              networks:
+                default:
+                  labels:
+                    offsitebuddy.cleanup-fixture: >-
+                      {{ ansible_facts['hostname'] }}
+
+        - name: Start client identity shadow Compose project
+          community.docker.docker_compose_v2:
+            project_src: >-
+              {{ client_shadow_root }}/{{ client_shadow_legacy }}
+            project_name: "{{ client_shadow_legacy }}"
+            files:
+              - compose.yaml
+            state: present
+
+        - name: Record client identity shadow Compose checksum
+          ansible.builtin.stat:
+            path: >-
+              {{ client_shadow_root }}/{{ client_shadow_legacy }}/compose.yaml
+            get_checksum: true
+          register: client_shadow_compose_before
+
+        - name: Require client identity shadow refusal with cleanup disabled
+          block:
+            - name: Invoke client main against a managed identity shadow
+              ansible.builtin.include_role:
+                name: client
+                tasks_from: main.yml
+              vars:
+                offsitebuddy_client_root: "{{ client_shadow_root }}"
+                offsitebuddy_cleanup_stale: false
+                offsitebuddy_start_services: false
+                offsitebuddy_manage_systemd: false
+                offsitebuddy_client_jobs:
+                  - name: "{{ client_shadow_current }}"
+                    repository: rest:http://127.0.0.1:8000/repository
+                    password: cleanup-client-shadow-fixture
+                    schedule: "03:30"
+                    backup_paths:
+                      - "{{ client_shadow_source }}"
+                    init_if_missing: false
+                    run_initial_backup: false
+
+            - name: Fail if client identity shadow is accepted
+              ansible.builtin.fail:
+                msg: Client identity shadow unexpectedly passed preflight.
+          rescue:
+            - name: Assert client identity shadow refusal is safe
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    ansible_failed_task.name is search(
+                      'Refuse managed client names that shadow current '
+                      'Compose projects'
+                    )
+                  - >-
+                    (ansible_failed_result | to_json) is search(
+                      client_shadow_legacy
+                    )
+
+        - name: Check client identity shadow state after refusal
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            get_checksum: true
+          loop:
+            - "{{ client_shadow_root }}/{{ client_shadow_current }}"
+            - >-
+              {{ client_shadow_root }}/{{ client_shadow_legacy
+              }}/.offsitebuddy-managed
+            - "{{ client_shadow_root }}/{{ client_shadow_legacy }}/sentinel"
+            - >-
+              {{ client_shadow_root }}/{{ client_shadow_legacy }}/compose.yaml
+          register: client_shadow_files
+
+        - name: Verify client identity shadow refusal preceded writes
+          ansible.builtin.assert:
+            that:
+              - not client_shadow_files.results[0].stat.exists
+              - client_shadow_files.results[1].stat.exists
+              - client_shadow_files.results[2].stat.exists
+              - >-
+                client_shadow_files.results[3].stat.checksum ==
+                client_shadow_compose_before.stat.checksum
+      always:
+        - name: Tear down client identity shadow fixture
+          community.docker.docker_compose_v2:
+            project_src: "{{ legacy_teardown_root }}"
+            project_name: "{{ client_shadow_legacy }}"
+            files:
+              - compose.yaml
+            state: absent
+            remove_orphans: true
+
+        - name: Inspect client identity shadow fixture resources
+          community.docker.docker_host_info:
+            containers: true
+            containers_all: true
+            containers_filters:
+              label: "com.docker.compose.project={{ client_shadow_legacy }}"
+            networks: true
+            networks_filters:
+              label: "com.docker.compose.project={{ client_shadow_legacy }}"
+          register: client_shadow_fixture_resources
+
+        - name: Verify client identity shadow fixture did not leak
+          ansible.builtin.assert:
+            that:
+              - client_shadow_fixture_resources.containers | length == 0
+              - client_shadow_fixture_resources.networks | length == 0
+
+    - name: Exercise current client generic Compose refusal before job writes
+      block:
+        - name: Create current client generic Compose and source directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            mode: "0755"
+          loop:
+            - >-
+              {{ current_client_legacy_root }}/{{ current_client_legacy_job }}
+            - "{{ current_client_legacy_source }}"
+
+        - name: Create current client generic Compose definition
+          ansible.builtin.copy:
+            dest: >-
+              {{ current_client_legacy_root }}/{{ current_client_legacy_job
+              }}/compose.yaml
+            mode: "0600"
+            content: |
+              ---
+              services:
+                fixture:
+                  image: alpine:3.20
+                  command: ["sleep", "infinity"]
+                  labels:
+                    offsitebuddy.cleanup-fixture: >-
+                      {{ ansible_facts['hostname'] }}
+              networks:
+                default:
+                  labels:
+                    offsitebuddy.cleanup-fixture: >-
+                      {{ ansible_facts['hostname'] }}
+
+        - name: Start current client generic Compose project
+          community.docker.docker_compose_v2:
+            project_src: >-
+              {{ current_client_legacy_root }}/{{ current_client_legacy_job }}
+            project_name: "{{ current_client_legacy_job }}"
+            files:
+              - compose.yaml
+            state: present
+
+        - name: Record current client generic Compose checksum
+          ansible.builtin.stat:
+            path: >-
+              {{ current_client_legacy_root }}/{{ current_client_legacy_job
+              }}/compose.yaml
+            get_checksum: true
+          register: current_client_legacy_compose_before
+
+        - name: Require current client generic Compose migration refusal
+          block:
+            - name: Invoke client main with a current generic Compose project
+              ansible.builtin.include_role:
+                name: client
+                tasks_from: main.yml
+              vars:
+                offsitebuddy_client_root: "{{ current_client_legacy_root }}"
+                offsitebuddy_cleanup_stale: false
+                offsitebuddy_start_services: false
+                offsitebuddy_manage_systemd: false
+                offsitebuddy_client_jobs:
+                  - name: "{{ current_client_legacy_job }}"
+                    repository: rest:http://127.0.0.1:8000/repository
+                    password: cleanup-current-client-legacy-fixture
+                    schedule: "03:30"
+                    backup_paths:
+                      - "{{ current_client_legacy_source }}"
+                    init_if_missing: false
+                    run_initial_backup: false
+
+            - name: Fail if current client generic migration is accepted
+              ansible.builtin.fail:
+                msg: Current client generic migration unexpectedly succeeded.
+          rescue:
+            - name: Assert current client generic Compose refusal is sanitized
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    ansible_failed_task.name is search(
+                      'Refuse to replace legacy generic client Compose projects'
+                    )
+                  - >-
+                    (ansible_failed_result | to_json) is search(
+                      '--project-name ' ~ current_client_legacy_job
+                    )
+                  - >-
+                    (ansible_failed_result | to_json) is search(
+                      '--file ' ~ current_client_legacy_root ~ '/' ~
+                      current_client_legacy_job ~ '/compose.yaml down'
+                    )
+
+        - name: Check current client files after migration refusal
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            get_checksum: true
+          loop:
+            - >-
+              {{ current_client_legacy_root }}/{{ current_client_legacy_job
+              }}/compose.yaml
+            - >-
+              {{ current_client_legacy_root }}/{{ current_client_legacy_job
+              }}/.offsitebuddy-managed
+            - >-
+              {{ current_client_legacy_root }}/{{ current_client_legacy_job
+              }}/.env
+            - >-
+              {{ current_client_legacy_root }}/{{ current_client_legacy_job
+              }}/password
+            - >-
+              {{ current_client_legacy_root }}/{{ current_client_legacy_job
+              }}/backup.sh
+          register: current_client_legacy_files
+
+        - name: Verify current client refusal preceded job writes
+          ansible.builtin.assert:
+            that:
+              - >-
+                current_client_legacy_files.results[0].stat.checksum ==
+                current_client_legacy_compose_before.stat.checksum
+              - not current_client_legacy_files.results[1].stat.exists
+              - not current_client_legacy_files.results[2].stat.exists
+              - not current_client_legacy_files.results[3].stat.exists
+              - not current_client_legacy_files.results[4].stat.exists
+      always:
+        - name: Tear down current client generic Compose fixture
+          community.docker.docker_compose_v2:
+            project_src: "{{ legacy_teardown_root }}"
+            project_name: "{{ current_client_legacy_job }}"
+            files:
+              - compose.yaml
+            state: absent
+            remove_orphans: true
+
+        - name: Inspect current client generic Compose fixture resources
+          community.docker.docker_host_info:
+            containers: true
+            containers_all: true
+            containers_filters:
+              label: >-
+                com.docker.compose.project={{ current_client_legacy_job }}
+            networks: true
+            networks_filters:
+              label: >-
+                com.docker.compose.project={{ current_client_legacy_job }}
+          register: current_client_legacy_fixture_resources
+
+        - name: Verify current client generic fixture did not leak
+          ansible.builtin.assert:
+            that:
+              - >-
+                current_client_legacy_fixture_resources.containers | length
+                == 0
+              - >-
+                current_client_legacy_fixture_resources.networks | length
+                == 0
+
+    - name: Exercise current generic Compose refusal before friend writes
+      block:
+        - name: Create current generic Compose and quota directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            mode: "0755"
+          loop:
+            - >-
+              {{ current_legacy_root }}/friends/{{ current_legacy_friend }}
+            - "{{ current_legacy_quota }}"
+
+        - name: Create current generic Compose definition
+          ansible.builtin.copy:
+            dest: >-
+              {{ current_legacy_root }}/friends/{{ current_legacy_friend
+              }}/compose.yaml
+            mode: "0600"
+            content: |
+              ---
+              services:
+                fixture:
+                  image: alpine:3.20
+                  command: ["sleep", "infinity"]
+                  labels:
+                    offsitebuddy.cleanup-fixture: >-
+                      {{ ansible_facts['hostname'] }}
+              networks:
+                default:
+                  labels:
+                    offsitebuddy.cleanup-fixture: >-
+                      {{ ansible_facts['hostname'] }}
+
+        - name: Start current generic Compose project
+          community.docker.docker_compose_v2:
+            project_src: >-
+              {{ current_legacy_root }}/friends/{{ current_legacy_friend }}
+            project_name: "{{ current_legacy_friend }}"
+            files:
+              - compose.yaml
+            state: present
+
+        - name: Record current generic Compose checksum
+          ansible.builtin.stat:
+            path: >-
+              {{ current_legacy_root }}/friends/{{ current_legacy_friend
+              }}/compose.yaml
+            get_checksum: true
+          register: current_legacy_compose_before
+
+        - name: Require current generic Compose migration refusal
+          block:
+            - name: Invoke server main with a current generic Compose project
+              ansible.builtin.include_role:
+                name: server
+                tasks_from: main.yml
+              vars:
+                offsitebuddy_server_root: "{{ current_legacy_root }}"
+                offsitebuddy_cleanup_stale: false
+                offsitebuddy_start_services: true
+                offsitebuddy_friends:
+                  - name: "{{ current_legacy_friend }}"
+                    quota:
+                      path: "{{ current_legacy_quota }}"
+                      enforced: true
+                      enforcement_note: Molecule legacy migration fixture
+                    tailscale:
+                      hostname: "{{ current_legacy_friend }}"
+                      auth_key: tskey-auth-current-legacy-fixture
+                    rest_server:
+                      username: cleanup-current-legacy
+                      password: cleanup-current-legacy-fixture
+
+            - name: Fail if current generic Compose migration is accepted
+              ansible.builtin.fail:
+                msg: Current generic Compose migration unexpectedly succeeded.
+          rescue:
+            - name: Assert current generic Compose refusal is sanitized
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    ansible_failed_task.name is search(
+                      'Refuse to replace legacy generic friend Compose projects'
+                    )
+                  - >-
+                    (ansible_failed_result | to_json) is search(
+                      '--project-name ' ~ current_legacy_friend
+                    )
+                  - >-
+                    (ansible_failed_result | to_json) is search(
+                      '--file ' ~ current_legacy_root ~ '/friends/' ~
+                      current_legacy_friend ~ '/compose.yaml down'
+                    )
+
+        - name: Check current friend files after migration refusal
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            get_checksum: true
+          loop:
+            - >-
+              {{ current_legacy_root }}/friends/{{ current_legacy_friend
+              }}/compose.yaml
+            - >-
+              {{ current_legacy_root }}/friends/{{ current_legacy_friend
+              }}/.offsitebuddy-managed
+            - >-
+              {{ current_legacy_root }}/friends/{{ current_legacy_friend }}/.env
+            - >-
+              {{ current_legacy_root }}/friends/{{ current_legacy_friend
+              }}/htpasswd
+            - >-
+              {{ current_legacy_root }}/friends/{{ current_legacy_friend
+              }}/tailscale-state
+          register: current_legacy_friend_files
+
+        - name: Verify current migration refusal preceded friend writes
+          ansible.builtin.assert:
+            that:
+              - >-
+                current_legacy_friend_files.results[0].stat.checksum ==
+                current_legacy_compose_before.stat.checksum
+              - not current_legacy_friend_files.results[1].stat.exists
+              - not current_legacy_friend_files.results[2].stat.exists
+              - not current_legacy_friend_files.results[3].stat.exists
+              - not current_legacy_friend_files.results[4].stat.exists
+      always:
+        - name: Tear down current generic Compose fixture
+          community.docker.docker_compose_v2:
+            project_src: "{{ legacy_teardown_root }}"
+            project_name: "{{ current_legacy_friend }}"
+            files:
+              - compose.yaml
+            state: absent
+            remove_orphans: true
+
+        - name: Inspect current generic Compose fixture resources
+          community.docker.docker_host_info:
+            containers: true
+            containers_all: true
+            containers_filters:
+              label: >-
+                com.docker.compose.project={{ current_legacy_friend }}
+            networks: true
+            networks_filters:
+              label: >-
+                com.docker.compose.project={{ current_legacy_friend }}
+          register: current_legacy_fixture_resources
+
+        - name: Verify current generic Compose fixture did not leak
+          ansible.builtin.assert:
+            that:
+              - current_legacy_fixture_resources.containers | length == 0
+              - current_legacy_fixture_resources.networks | length == 0
+
+    - name: Exercise stale generic Compose refusal before deletion
+      block:
+        - name: Create stale generic Compose directory
+          ansible.builtin.file:
+            path: >-
+              {{ stale_legacy_root }}/friends/{{ stale_legacy_friend }}
+            state: directory
+            mode: "0755"
+
+        - name: Create stale generic Compose managed files
+          ansible.builtin.copy:
+            dest: >-
+              {{ stale_legacy_root }}/friends/{{ stale_legacy_friend
+              }}/{{ item }}
+            content: preserved
+            mode: "0600"
+          loop:
+            - .offsitebuddy-managed
+            - sentinel
+
+        - name: Create stale generic Compose definition
+          ansible.builtin.copy:
+            dest: >-
+              {{ stale_legacy_root }}/friends/{{ stale_legacy_friend
+              }}/compose.yaml
+            mode: "0600"
+            content: |
+              ---
+              services:
+                fixture:
+                  image: alpine:3.20
+                  command: ["sleep", "infinity"]
+                  labels:
+                    offsitebuddy.cleanup-fixture: >-
+                      {{ ansible_facts['hostname'] }}
+              networks:
+                default:
+                  labels:
+                    offsitebuddy.cleanup-fixture: >-
+                      {{ ansible_facts['hostname'] }}
+
+        - name: Start stale generic Compose project
+          community.docker.docker_compose_v2:
+            project_src: >-
+              {{ stale_legacy_root }}/friends/{{ stale_legacy_friend }}
+            project_name: "{{ stale_legacy_friend }}"
+            files:
+              - compose.yaml
+            state: present
+
+        - name: Record stale generic Compose checksum
+          ansible.builtin.stat:
+            path: >-
+              {{ stale_legacy_root }}/friends/{{ stale_legacy_friend
+              }}/compose.yaml
+            get_checksum: true
+          register: stale_legacy_compose_before
+
+        - name: Require stale generic Compose migration refusal
+          block:
+            - name: Invoke server main with a stale generic Compose project
+              ansible.builtin.include_role:
+                name: server
+                tasks_from: main.yml
+              vars:
+                offsitebuddy_server_root: "{{ stale_legacy_root }}"
+                offsitebuddy_friends: []
+                offsitebuddy_cleanup_stale: true
+                offsitebuddy_start_services: true
+
+            - name: Fail if stale generic Compose migration is accepted
+              ansible.builtin.fail:
+                msg: Stale generic Compose migration unexpectedly succeeded.
+          rescue:
+            - name: Assert stale generic Compose refusal is sanitized
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    ansible_failed_task.name is search(
+                      'Refuse to remove stale friends with legacy generic '
+                      'Compose projects'
+                    )
+                  - >-
+                    (ansible_failed_result | to_json) is search(
+                      '--project-name ' ~ stale_legacy_friend
+                    )
+                  - >-
+                    (ansible_failed_result | to_json) is search(
+                      '--file ' ~ stale_legacy_root ~ '/friends/' ~
+                      stale_legacy_friend ~ '/compose.yaml down'
+                    )
+
+        - name: Check stale managed files after migration refusal
+          ansible.builtin.stat:
+            path: >-
+              {{ stale_legacy_root }}/friends/{{ stale_legacy_friend
+              }}/{{ item }}
+            get_checksum: true
+          loop:
+            - .offsitebuddy-managed
+            - sentinel
+            - compose.yaml
+          register: stale_legacy_friend_files
+
+        - name: Verify stale migration refusal preserved managed files
+          ansible.builtin.assert:
+            that:
+              - stale_legacy_friend_files.results[0].stat.exists
+              - stale_legacy_friend_files.results[1].stat.exists
+              - >-
+                stale_legacy_friend_files.results[2].stat.checksum ==
+                stale_legacy_compose_before.stat.checksum
+      always:
+        - name: Tear down stale generic Compose fixture
+          community.docker.docker_compose_v2:
+            project_src: "{{ legacy_teardown_root }}"
+            project_name: "{{ stale_legacy_friend }}"
+            files:
+              - compose.yaml
+            state: absent
+            remove_orphans: true
+
+        - name: Inspect stale generic Compose fixture resources
+          community.docker.docker_host_info:
+            containers: true
+            containers_all: true
+            containers_filters:
+              label: "com.docker.compose.project={{ stale_legacy_friend }}"
+            networks: true
+            networks_filters:
+              label: "com.docker.compose.project={{ stale_legacy_friend }}"
+          register: stale_legacy_fixture_resources
+
+        - name: Verify stale generic Compose fixture did not leak
+          ansible.builtin.assert:
+            that:
+              - stale_legacy_fixture_resources.containers | length == 0
+              - stale_legacy_fixture_resources.networks | length == 0
+
+    - name: Exercise stale client generic Compose refusal before deletion
+      block:
+        - name: Create stale client generic Compose directory
+          ansible.builtin.file:
+            path: >-
+              {{ stale_client_legacy_root }}/{{ stale_client_legacy_job }}
+            state: directory
+            mode: "0755"
+
+        - name: Create stale client generic managed files
+          ansible.builtin.copy:
+            dest: >-
+              {{ stale_client_legacy_root }}/{{ stale_client_legacy_job
+              }}/{{ item }}
+            content: preserved
+            mode: "0600"
+          loop:
+            - .offsitebuddy-managed
+            - sentinel
+
+        - name: Create stale client generic Compose definition
+          ansible.builtin.copy:
+            dest: >-
+              {{ stale_client_legacy_root }}/{{ stale_client_legacy_job
+              }}/compose.yaml
+            mode: "0600"
+            content: |
+              ---
+              services:
+                fixture:
+                  image: alpine:3.20
+                  command: ["sleep", "infinity"]
+                  labels:
+                    offsitebuddy.cleanup-fixture: >-
+                      {{ ansible_facts['hostname'] }}
+              networks:
+                default:
+                  labels:
+                    offsitebuddy.cleanup-fixture: >-
+                      {{ ansible_facts['hostname'] }}
+
+        - name: Start stale client generic Compose project
+          community.docker.docker_compose_v2:
+            project_src: >-
+              {{ stale_client_legacy_root }}/{{ stale_client_legacy_job }}
+            project_name: "{{ stale_client_legacy_job }}"
+            files:
+              - compose.yaml
+            state: present
+
+        - name: Create stale client generic unit file
+          ansible.builtin.copy:
+            dest: >-
+              /etc/systemd/system/offsitebuddy-backup-{{
+              stale_client_legacy_job }}.service
+            mode: "0644"
+            content: |
+              [Unit]
+              Description=OffsiteBuddy stale client migration fixture
+
+              [Service]
+              Type=oneshot
+              ExecStart=/bin/true
+
+        - name: Reload systemd for stale client generic fixture
+          ansible.builtin.systemd:
+            daemon_reload: true
+
+        - name: Record stale client generic Compose checksum
+          ansible.builtin.stat:
+            path: >-
+              {{ stale_client_legacy_root }}/{{ stale_client_legacy_job
+              }}/compose.yaml
+            get_checksum: true
+          register: stale_client_legacy_compose_before
+
+        - name: Require stale client generic Compose migration refusal
+          block:
+            - name: Invoke client main with a stale generic Compose project
+              ansible.builtin.include_role:
+                name: client
+                tasks_from: main.yml
+              vars:
+                offsitebuddy_client_root: "{{ stale_client_legacy_root }}"
+                offsitebuddy_client_jobs: []
+                offsitebuddy_cleanup_stale: true
+                offsitebuddy_start_services: true
+                offsitebuddy_manage_systemd: true
+
+            - name: Fail if stale client generic migration is accepted
+              ansible.builtin.fail:
+                msg: >-
+                  Stale client generic Compose migration unexpectedly
+                  succeeded.
+          rescue:
+            - name: Assert stale client generic Compose refusal is sanitized
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    ansible_failed_task.name is search(
+                      'Refuse to remove stale jobs with legacy generic '
+                      'Compose projects'
+                    )
+                  - >-
+                    (ansible_failed_result | to_json) is search(
+                      '--project-name ' ~ stale_client_legacy_job
+                    )
+                  - >-
+                    (ansible_failed_result | to_json) is search(
+                      '--file ' ~ stale_client_legacy_root ~ '/' ~
+                      stale_client_legacy_job ~ '/compose.yaml down'
+                    )
+
+        - name: Check stale client files after migration refusal
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            get_checksum: true
+          loop:
+            - >-
+              {{ stale_client_legacy_root }}/{{ stale_client_legacy_job
+              }}/.offsitebuddy-managed
+            - >-
+              {{ stale_client_legacy_root }}/{{ stale_client_legacy_job
+              }}/sentinel
+            - >-
+              {{ stale_client_legacy_root }}/{{ stale_client_legacy_job
+              }}/compose.yaml
+            - >-
+              /etc/systemd/system/offsitebuddy-backup-{{
+              stale_client_legacy_job }}.service
+          register: stale_client_legacy_files
+
+        - name: Verify stale client refusal preserved managed files
+          ansible.builtin.assert:
+            that:
+              - stale_client_legacy_files.results[0].stat.exists
+              - stale_client_legacy_files.results[1].stat.exists
+              - >-
+                stale_client_legacy_files.results[2].stat.checksum ==
+                stale_client_legacy_compose_before.stat.checksum
+              - stale_client_legacy_files.results[3].stat.exists
+      always:
+        - name: Tear down stale client generic Compose fixture
+          community.docker.docker_compose_v2:
+            project_src: "{{ legacy_teardown_root }}"
+            project_name: "{{ stale_client_legacy_job }}"
+            files:
+              - compose.yaml
+            state: absent
+            remove_orphans: true
+
+        - name: Remove stale client generic unit file
+          ansible.builtin.file:
+            path: >-
+              /etc/systemd/system/offsitebuddy-backup-{{
+              stale_client_legacy_job }}.service
+            state: absent
+
+        - name: Reload systemd after stale client generic fixture
+          ansible.builtin.systemd:
+            daemon_reload: true
+
+        - name: Inspect stale client generic Compose fixture resources
+          community.docker.docker_host_info:
+            containers: true
+            containers_all: true
+            containers_filters:
+              label: >-
+                com.docker.compose.project={{ stale_client_legacy_job }}
+            networks: true
+            networks_filters:
+              label: >-
+                com.docker.compose.project={{ stale_client_legacy_job }}
+          register: stale_client_legacy_fixture_resources
+
+        - name: Verify stale client generic fixture did not leak
+          ansible.builtin.assert:
+            that:
+              - >-
+                stale_client_legacy_fixture_resources.containers | length == 0
+              - >-
+                stale_client_legacy_fixture_resources.networks | length == 0
+
+    - name: Create invalid Compose failure directory
+      ansible.builtin.file:
+        path: >-
+          {{ server_stop_failure_root ~ '/friends/' ~
+          server_stop_failure_friend }}
+        state: directory
+        mode: "0755"
+
+    - name: Create invalid Compose marker and sentinel
+      ansible.builtin.copy:
+        dest: >-
+          {{ server_stop_failure_root }}/friends/{{ server_stop_failure_friend
+          }}/{{ item }}
+        content: preserved
+        mode: "0600"
+      loop:
+        - .offsitebuddy-managed
+        - sentinel
+
+    - name: Create invalid stale Compose definition
+      ansible.builtin.copy:
+        dest: >-
+          {{ server_stop_failure_root }}/friends/{{ server_stop_failure_friend
+          }}/compose.yaml
+        mode: "0600"
+        content: |
+          ---
+          services:
+            invalid:
+              image: [
+
+    - name: Require Compose stop failure to preserve managed state
+      block:
+        - name: Invoke server main against invalid stale Compose
+          ansible.builtin.include_role:
+            name: server
+            tasks_from: main.yml
+          vars:
+            offsitebuddy_server_root: "{{ server_stop_failure_root }}"
+            offsitebuddy_friends: []
+            offsitebuddy_cleanup_stale: true
+            offsitebuddy_start_services: true
+
+        - name: Fail if invalid stale Compose cleanup succeeds
+          ansible.builtin.fail:
+            msg: Invalid stale Compose cleanup unexpectedly succeeded.
+      rescue:
+        - name: Assert invalid Compose failed during shutdown
+          ansible.builtin.assert:
+            that:
+              - >-
+                ansible_failed_task.name is search(
+                  'Stop stale friend server stacks'
+                )
+              - >-
+                (ansible_failed_result | to_json) is search(
+                  'failed to parse'
+                )
+
+    - name: Check invalid Compose marker and sentinel after failure
+      ansible.builtin.stat:
+        path: >-
+          {{ server_stop_failure_root }}/friends/{{ server_stop_failure_friend
+          }}/{{ item }}
+      loop:
+        - .offsitebuddy-managed
+        - sentinel
+      register: compose_failure_files
+
+    - name: Verify Compose stop failure preserved managed state
+      ansible.builtin.assert:
+        that:
+          - compose_failure_files.results | map(attribute='stat.exists') | min
+
+    - name: Create systemd stop failure managed directory
+      ansible.builtin.file:
+        path: "{{ client_stop_failure_root }}/{{ client_stop_failure_job }}"
+        state: directory
+        mode: "0755"
+
+    - name: Create systemd stop failure marker and sentinel
+      ansible.builtin.copy:
+        dest: >-
+          {{ client_stop_failure_root }}/{{ client_stop_failure_job
+          }}/{{ item }}
+        content: preserved
+        mode: "0600"
+      loop:
+        - .offsitebuddy-managed
+        - sentinel
+
+    - name: Create RefuseManualStop service
+      ansible.builtin.copy:
+        dest: >-
+          /etc/systemd/system/offsitebuddy-backup-{{ client_stop_failure_job
+          }}.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=OffsiteBuddy cleanup stop failure fixture
+          RefuseManualStop=yes
+
+          [Service]
+          Type=simple
+          ExecStart=/bin/sleep infinity
+
+    - name: Reload systemd for stop failure fixture
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Start RefuseManualStop service
+      ansible.builtin.systemd:
+        name: "offsitebuddy-backup-{{ client_stop_failure_job }}.service"
+        state: started
+
+    - name: Require systemd stop failure to preserve managed state
+      block:
+        - name: Invoke client main against RefuseManualStop service
+          ansible.builtin.include_role:
+            name: client
+            tasks_from: main.yml
+          vars:
+            offsitebuddy_client_root: "{{ client_stop_failure_root }}"
+            offsitebuddy_client_jobs: []
+            offsitebuddy_cleanup_stale: true
+            offsitebuddy_start_services: true
+            offsitebuddy_manage_systemd: true
+
+        - name: Fail if RefuseManualStop cleanup succeeds
+          ansible.builtin.fail:
+            msg: RefuseManualStop cleanup unexpectedly succeeded.
+      rescue:
+        - name: Assert RefuseManualStop failed during unit shutdown
+          ansible.builtin.assert:
+            that:
+              - >-
+                ansible_failed_task.name is search(
+                  'Stop loaded stale client units'
+                )
+              - >-
+                (ansible_failed_result | to_json) is search(
+                  'Operation refused'
+                )
+
+    - name: Check systemd failure marker, sentinel, and unit
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - >-
+          {{ client_stop_failure_root }}/{{ client_stop_failure_job
+          }}/.offsitebuddy-managed
+        - >-
+          {{ client_stop_failure_root }}/{{ client_stop_failure_job }}/sentinel
+        - >-
+          /etc/systemd/system/offsitebuddy-backup-{{ client_stop_failure_job
+          }}.service
+      register: systemd_failure_files
+
+    - name: Check RefuseManualStop service remains active
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - "offsitebuddy-backup-{{ client_stop_failure_job }}.service"
+      changed_when: false
+
+    - name: Verify systemd stop failure preserved managed state
+      ansible.builtin.assert:
+        that:
+          - systemd_failure_files.results | map(attribute='stat.exists') | min
+
+    - name: Create unloaded active service managed directory
+      ansible.builtin.file:
+        path: >-
+          {{ client_unloaded_active_root }}/{{ client_unloaded_active_job }}
+        state: directory
+        mode: "0755"
+
+    - name: Create unloaded active service marker and sentinel
+      ansible.builtin.copy:
+        dest: >-
+          {{ client_unloaded_active_root }}/{{ client_unloaded_active_job
+          }}/{{ item }}
+        content: preserved
+        mode: "0600"
+      loop:
+        - .offsitebuddy-managed
+        - sentinel
+
+    - name: Create unloaded active service Compose definition
+      ansible.builtin.copy:
+        dest: >-
+          {{ client_unloaded_active_root }}/{{ client_unloaded_active_job
+          }}/compose.yaml
+        mode: "0600"
+        content: |
+          ---
+          name: offsitebuddy-client-{{ client_unloaded_active_job }}
+          services:
+            restic:
+              image: alpine:3.20
+              command: ["true"]
+
+    - name: Create service for unloaded active state fixture
+      ansible.builtin.copy:
+        dest: >-
+          /etc/systemd/system/offsitebuddy-backup-{{
+          client_unloaded_active_job }}.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=OffsiteBuddy unloaded active cleanup fixture
+
+          [Service]
+          Type=simple
+          ExecStart=/bin/sleep infinity
+
+    - name: Reload systemd for unloaded active state fixture
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Start service for unloaded active state fixture
+      ansible.builtin.systemd:
+        name: >-
+          offsitebuddy-backup-{{ client_unloaded_active_job }}.service
+        state: started
+
+    - name: Remove active service unit file
+      ansible.builtin.file:
+        path: >-
+          /etc/systemd/system/offsitebuddy-backup-{{
+          client_unloaded_active_job }}.service
+        state: absent
+
+    - name: Reload systemd after removing active service unit file
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Query unloaded active service state
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - --property=LoadState
+          - --property=ActiveState
+          - >-
+            offsitebuddy-backup-{{ client_unloaded_active_job }}.service
+      register: unloaded_active_state
+      changed_when: false
+
+    - name: Verify unloaded active service fixture
+      ansible.builtin.assert:
+        that:
+          - "'LoadState=not-found' in unloaded_active_state.stdout_lines"
+          - "'ActiveState=active' in unloaded_active_state.stdout_lines"
+
+    - name: Run cleanup against unloaded active service
+      ansible.builtin.include_role:
+        name: client
+        tasks_from: main.yml
+      vars:
+        offsitebuddy_client_root: "{{ client_unloaded_active_root }}"
+        offsitebuddy_client_jobs: []
+        offsitebuddy_cleanup_stale: true
+        offsitebuddy_start_services: true
+        offsitebuddy_manage_systemd: true
+
+    - name: Check unloaded active managed directory was removed
+      ansible.builtin.stat:
+        path: >-
+          {{ client_unloaded_active_root }}/{{ client_unloaded_active_job }}
+      register: unloaded_active_directory
+
+    - name: Query cleaned unloaded service state
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - --property=ActiveState
+          - --value
+          - >-
+            offsitebuddy-backup-{{ client_unloaded_active_job }}.service
+      register: cleaned_unloaded_active_state
+      changed_when: false
+
+    - name: Verify unloaded active service stopped before deletion
+      ansible.builtin.assert:
+        that:
+          - not unloaded_active_directory.stat.exists
+          - cleaned_unloaded_active_state.stdout == 'inactive'

@@ -9,6 +9,8 @@ platforms:
   - name: offsitebuddy-instance
     image: geerlingguy/docker-debian12-ansible:latest
     command: sleep infinity
+    volumes:
+      - ${DOCKER_SOCKET_VOLUME:-/var/run/docker.sock:/var/run/docker.sock}
     pre_build_image: true
 provisioner:
   name: ansible

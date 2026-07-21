@@ -1,0 +1,36 @@
+---
+- name: Find managed friend markers for Compose identity preflight
+  ansible.builtin.find:
+    paths: "{{ offsitebuddy_server_root }}/friends"
+    patterns: .offsitebuddy-managed
+    recurse: true
+    depth: 2
+    hidden: true
+    file_type: file
+  register: offsitebuddy_server_identity_markers
+
+- name: Refuse managed friend names that shadow current Compose projects
+  vars:
+    managed_friend_name: "{{ item.path | dirname | basename }}"
+    current_project_names: >-
+      {{
+        offsitebuddy_friends
+        | map(attribute='name')
+        | map('regex_replace', '^', 'offsitebuddy-friend-')
+        | list
+      }}
+  ansible.builtin.assert:
+    that:
+      - >-
+        [managed_friend_name] | intersect(current_project_names) | length == 0
+    fail_msg: >-
+      Managed friend {{ managed_friend_name }} conflicts with a current Compose
+      project identity. Stop and migrate its legacy generic Compose project,
+      then remove the stale entry or enable safe stale cleanup before rerunning.
+  loop: "{{ offsitebuddy_server_identity_markers.files }}"
+  loop_control:
+    label: "{{ managed_friend_name }}"
+  when:
+    - >-
+      item.path | dirname | dirname ==
+      offsitebuddy_server_root ~ '/friends'

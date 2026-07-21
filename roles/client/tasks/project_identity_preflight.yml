@@ -1,0 +1,35 @@
+---
+- name: Find managed client markers for Compose identity preflight
+  ansible.builtin.find:
+    paths: "{{ offsitebuddy_client_root }}"
+    patterns: .offsitebuddy-managed
+    recurse: true
+    depth: 2
+    hidden: true
+    file_type: file
+  register: offsitebuddy_client_identity_markers
+
+- name: Refuse managed client names that shadow current Compose projects
+  vars:
+    managed_job_name: "{{ item.path | dirname | basename }}"
+    current_project_names: >-
+      {{
+        offsitebuddy_client_jobs
+        | map(attribute='name')
+        | map('regex_replace', '^', 'offsitebuddy-client-')
+        | list
+      }}
+  ansible.builtin.assert:
+    that:
+      - >-
+        [managed_job_name] | intersect(current_project_names) | length == 0
+    fail_msg: >-
+      Managed client job {{ managed_job_name }} conflicts with a current
+      Compose project identity. Stop and migrate its legacy generic Compose
+      project, then remove the stale entry or enable safe stale cleanup before
+      rerunning.
+  loop: "{{ offsitebuddy_client_identity_markers.files }}"
+  loop_control:
+    label: "{{ managed_job_name }}"
+  when:
+    - item.path | dirname | dirname == offsitebuddy_client_root

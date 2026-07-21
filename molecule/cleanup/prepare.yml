@@ -1,0 +1,307 @@
+---
+- name: Prepare stale cleanup lifecycle
+  hosts: all
+  become: true
+  environment:
+    DOCKER_HOST: >-
+      {{ lookup('env', 'MOLECULE_DOCKER_HOST') |
+      default('unix:///docker.sock', true) }}
+  vars:
+    docker_apt_architecture: >-
+      {{ {'aarch64': 'arm64', 'x86_64': 'amd64'}[
+      ansible_facts['architecture']] }}
+    retained_name: "cleanup-retained-{{ ansible_facts['hostname'] }}"
+    stale_name: "cleanup-stale-{{ ansible_facts['hostname'] }}"
+    stale_no_check_name: >-
+      cleanup-stale-no-check-{{ ansible_facts['hostname'] }}
+  tasks:
+    - name: Install Docker repository prerequisites
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - python3-debian
+          - python3-requests
+        state: present
+        update_cache: true
+
+    - name: Configure Docker repository
+      ansible.builtin.deb822_repository:
+        name: docker
+        types:
+          - deb
+        uris:
+          - https://download.docker.com/linux/debian
+        suites:
+          - "{{ ansible_facts['distribution_release'] }}"
+        components:
+          - stable
+        architectures:
+          - "{{ docker_apt_architecture }}"
+        signed_by: https://download.docker.com/linux/debian/gpg
+        state: present
+
+    - name: Install Docker CLI and Compose plugin
+      ansible.builtin.apt:
+        name:
+          - docker-ce-cli
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Check cleanup fixture project names are unused
+      community.docker.docker_host_info:
+        containers: true
+        containers_all: true
+        containers_filters:
+          label: "com.docker.compose.project={{ project_name }}"
+        networks: true
+        networks_filters:
+          label: "com.docker.compose.project={{ project_name }}"
+      loop:
+        - "offsitebuddy-friend-{{ stale_name }}"
+        - "offsitebuddy-client-{{ stale_name }}"
+        - "offsitebuddy-client-{{ stale_no_check_name }}"
+      loop_control:
+        loop_var: project_name
+        label: "{{ project_name }}"
+      register: cleanup_fixture_project_inspections
+      no_log: true
+
+    - name: Initialize cleanup fixture project summaries
+      ansible.builtin.set_fact:
+        cleanup_fixture_project_summaries: []
+      no_log: true
+
+    - name: Project cleanup fixture inspections
+      ansible.builtin.set_fact:
+        cleanup_fixture_project_summaries: >-
+          {{
+            cleanup_fixture_project_summaries +
+            [{
+              'project_name': fixture_inspection.project_name,
+              'container_count': fixture_inspection.containers | length,
+              'network_count': fixture_inspection.networks | length
+            }]
+          }}
+      loop: "{{ cleanup_fixture_project_inspections.results }}"
+      loop_control:
+        loop_var: fixture_inspection
+        label: "{{ fixture_inspection.project_name }}"
+      no_log: true
+
+    - name: Refuse to overwrite existing cleanup fixture projects
+      ansible.builtin.assert:
+        that:
+          - fixture_project.container_count == 0
+          - fixture_project.network_count == 0
+        fail_msg: >-
+          Cleanup fixture project {{ fixture_project.project_name }} already
+          exists on the Docker daemon; refusing to alter it.
+      loop: "{{ cleanup_fixture_project_summaries }}"
+      loop_control:
+        loop_var: fixture_project
+        label: "{{ fixture_project.project_name }}"
+
+    - name: Create managed and protected directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "/srv/offsitebuddy/friends/{{ retained_name }}"
+        - "/srv/offsitebuddy/friends/{{ stale_name }}"
+        - /srv/offsitebuddy/friends/unmarked
+        - "/etc/offsitebuddy/jobs/{{ retained_name }}"
+        - "/etc/offsitebuddy/jobs/{{ stale_name }}"
+        - "/etc/offsitebuddy/jobs/{{ stale_no_check_name }}"
+        - /etc/offsitebuddy/jobs/unmarked
+        - /tmp/offsitebuddy-stale-quota
+
+    - name: Create direct management markers
+      ansible.builtin.copy:
+        dest: "{{ item }}"
+        content: managed
+        mode: "0600"
+      loop:
+        - /srv/offsitebuddy/friends/.offsitebuddy-managed
+        - >-
+          /srv/offsitebuddy/friends/{{ retained_name }}/.offsitebuddy-managed
+        - "/srv/offsitebuddy/friends/{{ stale_name }}/.offsitebuddy-managed"
+        - /etc/offsitebuddy/jobs/.offsitebuddy-managed
+        - "/etc/offsitebuddy/jobs/{{ retained_name }}/.offsitebuddy-managed"
+        - "/etc/offsitebuddy/jobs/{{ stale_name }}/.offsitebuddy-managed"
+        - >-
+          /etc/offsitebuddy/jobs/{{ stale_no_check_name
+          }}/.offsitebuddy-managed
+
+    - name: Create external quota sentinel
+      ansible.builtin.copy:
+        dest: /tmp/offsitebuddy-stale-quota/sentinel
+        content: protected
+        mode: "0600"
+
+    - name: Create stale Compose project
+      ansible.builtin.copy:
+        dest: "/srv/offsitebuddy/friends/{{ stale_name }}/compose.yaml"
+        mode: "0600"
+        content: |
+          ---
+          name: offsitebuddy-friend-{{ stale_name }}
+          services:
+            stale:
+              image: alpine:3.20
+              command: ["sleep", "infinity"]
+              labels:
+                offsitebuddy.cleanup-fixture: "{{ ansible_facts['hostname'] }}"
+          networks:
+            default:
+              labels:
+                offsitebuddy.cleanup-fixture: "{{ ansible_facts['hostname'] }}"
+
+    - name: Start stale Compose project
+      community.docker.docker_compose_v2:
+        project_src: "/srv/offsitebuddy/friends/{{ stale_name }}"
+        project_name: "offsitebuddy-friend-{{ stale_name }}"
+        state: present
+
+    - name: Create stale client Compose project
+      ansible.builtin.copy:
+        dest: "/etc/offsitebuddy/jobs/{{ stale_name }}/compose.yaml"
+        mode: "0600"
+        content: |
+          ---
+          name: offsitebuddy-client-{{ stale_name }}
+          services:
+            tailscale:
+              image: alpine:3.20
+              command: ["sleep", "infinity"]
+              restart: unless-stopped
+              labels:
+                offsitebuddy.cleanup-fixture: "{{ ansible_facts['hostname'] }}"
+          networks:
+            default:
+              labels:
+                offsitebuddy.cleanup-fixture: "{{ ansible_facts['hostname'] }}"
+
+    - name: Start stale client Tailscale sidecar
+      community.docker.docker_compose_v2:
+        project_src: "/etc/offsitebuddy/jobs/{{ stale_name }}"
+        project_name: "offsitebuddy-client-{{ stale_name }}"
+        services:
+          - tailscale
+        state: present
+
+    - name: Create missing-check client Compose project
+      ansible.builtin.copy:
+        dest: >-
+          /etc/offsitebuddy/jobs/{{ stale_no_check_name }}/compose.yaml
+        mode: "0600"
+        content: |
+          ---
+          name: offsitebuddy-client-{{ stale_no_check_name }}
+          services:
+            restic:
+              image: alpine:3.20
+              command: ["true"]
+
+    - name: Create stale systemd service units
+      ansible.builtin.copy:
+        dest: >-
+          /etc/systemd/system/offsitebuddy-{{ item.kind
+          }}-{{ item.job }}.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=OffsiteBuddy stale cleanup test service
+
+          [Service]
+          Type=oneshot
+          ExecStart=/bin/true
+      loop:
+        - kind: backup
+          job: "{{ stale_name }}"
+        - kind: check
+          job: "{{ stale_name }}"
+        - kind: backup
+          job: "{{ stale_no_check_name }}"
+
+    - name: Create stale systemd timer units
+      ansible.builtin.copy:
+        dest: >-
+          /etc/systemd/system/offsitebuddy-{{ item.kind
+          }}-{{ item.job }}.timer
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=OffsiteBuddy stale cleanup test timer
+
+          [Timer]
+          OnActiveSec=1h
+          Unit=offsitebuddy-{{ item.kind }}-{{ item.job }}.service
+
+          [Install]
+          WantedBy=timers.target
+      loop:
+        - kind: backup
+          job: "{{ stale_name }}"
+        - kind: check
+          job: "{{ stale_name }}"
+        - kind: backup
+          job: "{{ stale_no_check_name }}"
+      notify: Reload systemd
+
+    - name: Flush systemd reload handler
+      ansible.builtin.meta: flush_handlers
+
+    - name: Start stale systemd timers
+      ansible.builtin.systemd:
+        name: "offsitebuddy-{{ item.kind }}-{{ item.job }}.timer"
+        enabled: true
+        state: started
+      loop:
+        - kind: backup
+          job: "{{ stale_name }}"
+        - kind: check
+          job: "{{ stale_name }}"
+        - kind: backup
+          job: "{{ stale_no_check_name }}"
+
+    - name: Find stale Compose project resources
+      community.docker.docker_host_info:
+        containers: true
+        containers_all: true
+        containers_filters:
+          label: >-
+            com.docker.compose.project=offsitebuddy-friend-{{ stale_name }}
+        networks: true
+        networks_filters:
+          label: >-
+            com.docker.compose.project=offsitebuddy-friend-{{ stale_name }}
+      register: stale_compose_project
+
+    - name: Find stale client Compose project resources
+      community.docker.docker_host_info:
+        containers: true
+        containers_all: true
+        containers_filters:
+          label: >-
+            com.docker.compose.project=offsitebuddy-client-{{ stale_name }}
+        networks: true
+        networks_filters:
+          label: >-
+            com.docker.compose.project=offsitebuddy-client-{{ stale_name }}
+      register: stale_client_compose_project
+
+    - name: Verify stale runtime setup
+      ansible.builtin.assert:
+        that:
+          - stale_compose_project.containers | length > 0
+          - stale_compose_project.networks | length > 0
+          - stale_client_compose_project.containers | length > 0
+          - stale_client_compose_project.networks | length > 0
+        fail_msg: Stale Compose project did not start.
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true

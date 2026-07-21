@@ -20,6 +20,25 @@ systemd units for each entry in `offsitebuddy_client_jobs`.
 - `offsitebuddy_start_services`: Start generated services after writing files.
 - `offsitebuddy_cleanup_stale`: Remove generated files for deleted jobs.
 
+## Stale Cleanup
+
+Stale cleanup is opt-in (`offsitebuddy_cleanup_stale: true`) and requires runtime
+management with `offsitebuddy_start_services: true` and
+`offsitebuddy_manage_systemd: true`. It stops a stale job's timers and services
+and verifies its `offsitebuddy-client-<job-name>` Compose project is down before
+removing the managed directory, including its Tailscale state. External quota
+data is never removed, and directories without a direct `.offsitebuddy-managed`
+marker are ignored.
+
+Missing optional check units are safe to skip. Any real systemd query or stop
+error remains fatal and preserves the stale managed directory for inspection.
+
+Older releases used the generic job name as the Compose project name. The role
+detects those projects before job-specific files change and refuses to migrate
+them automatically. Inspect the reported project, then stop it explicitly with
+`docker compose --project-name <job-name> --file <managed-compose-path>/compose.yaml down`
+before rerunning the role.
+
 ## Example Playbook
 
 ```yaml
