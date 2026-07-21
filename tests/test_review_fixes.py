@@ -411,7 +411,7 @@ def main():
     assert "actions/checkout@v7" in workflow, (
         "CI checkout action should use a Node 24 runtime"
     )
-    assert "actions/setup-python@v6" in workflow, (
+    assert "actions/setup-python@v7" in workflow, (
         "CI setup-python action should use a Node 24 runtime"
     )
     assert "actions/checkout@v4" not in workflow
