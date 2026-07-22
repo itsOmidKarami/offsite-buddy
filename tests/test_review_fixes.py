@@ -649,6 +649,8 @@ def main():
         "docker compose --project-name <job-name> --file "
         "<managed-compose-path>/compose.yaml down"
     ) in client_readme
+    for snippet in ("Persistent=true", "RandomizedDelaySec", "missed", "read_data"):
+        assert snippet in client_readme, "missing client timer guidance: %s" % snippet
 
     default_molecule = read("molecule/default/molecule.yml")
     assert "DOCKER_SOCKET_VOLUME" in default_molecule
