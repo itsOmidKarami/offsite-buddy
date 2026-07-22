@@ -5,25 +5,66 @@
   vars:
     offsitebuddy_client_jobs:
       - name: daily_job
-        repository: /tmp/offsitebuddy-systemd-daily-repository
-        password: test-systemd-daily-password
+        repository: >-
+          rest:http://synthetic:repo-sentinel@unit.invalid/
+        password: systemd-restic-password-sentinel
+        tailscale:
+          hostname: offsitebuddy-systemd-daily
+          auth_key: systemd-tailscale-auth-sentinel
         init_if_missing: false
         run_initial_backup: false
         schedule: "03:30"
         backup_paths:
           - /tmp/offsitebuddy-systemd-daily-source
+        heartbeat:
+          start_url: https://unit-leak.invalid/systemd-heartbeat-sentinel
+          success_url: https://unit-leak.invalid/systemd-heartbeat-sentinel
+          failure_url: https://unit-leak.invalid/systemd-heartbeat-sentinel
       - name: custom_job
-        repository: /tmp/offsitebuddy-systemd-custom-repository
-        password: test-systemd-custom-password
+        repository: >-
+          rest:http://synthetic:repo-sentinel@unit.invalid/
+        password: systemd-restic-password-sentinel
+        tailscale:
+          hostname: offsitebuddy-systemd-custom
+          auth_key: systemd-tailscale-auth-sentinel
         init_if_missing: false
         run_initial_backup: false
         schedule: "04:15"
         backup_paths:
           - /tmp/offsitebuddy-systemd-custom-source
+        heartbeat:
+          start_url: https://unit-leak.invalid/systemd-heartbeat-sentinel
+          success_url: https://unit-leak.invalid/systemd-heartbeat-sentinel
+          failure_url: https://unit-leak.invalid/systemd-heartbeat-sentinel
         check:
           enabled: false
           schedule: "Sun *-*-* 05:00:00"
   tasks:
+    - name: Check custom check timer is enabled and active before removal
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - "{{ item }}"
+          - offsitebuddy-check-custom_job.timer
+      loop:
+        - is-enabled
+        - is-active
+      changed_when: false
+
+    - name: Read custom check timer before removal
+      ansible.builtin.slurp:
+        path: /etc/systemd/system/offsitebuddy-check-custom_job.timer
+      register: custom_check_timer_before_removal
+      no_log: true
+
+    - name: Assert custom check schedule before removal
+      ansible.builtin.assert:
+        that:
+          - >-
+            'OnCalendar=Sun *-*-* 05:00:00' in
+            (custom_check_timer_before_removal.content | b64decode)
+      no_log: true
+
     - name: Reconfigure systemd timer jobs
       ansible.builtin.include_role:
         name: itsomidkarami.offsitebuddy.client

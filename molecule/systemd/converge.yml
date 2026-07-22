@@ -5,21 +5,37 @@
   vars:
     offsitebuddy_client_jobs:
       - name: daily_job
-        repository: /tmp/offsitebuddy-systemd-daily-repository
-        password: test-systemd-daily-password
+        repository: >-
+          rest:http://synthetic:repo-sentinel@unit.invalid/
+        password: systemd-restic-password-sentinel
+        tailscale:
+          hostname: offsitebuddy-systemd-daily
+          auth_key: systemd-tailscale-auth-sentinel
         init_if_missing: false
         run_initial_backup: false
         schedule: "03:30"
         backup_paths:
           - /tmp/offsitebuddy-systemd-daily-source
+        heartbeat:
+          start_url: https://unit-leak.invalid/systemd-heartbeat-sentinel
+          success_url: https://unit-leak.invalid/systemd-heartbeat-sentinel
+          failure_url: https://unit-leak.invalid/systemd-heartbeat-sentinel
       - name: custom_job
-        repository: /tmp/offsitebuddy-systemd-custom-repository
-        password: test-systemd-custom-password
+        repository: >-
+          rest:http://synthetic:repo-sentinel@unit.invalid/
+        password: systemd-restic-password-sentinel
+        tailscale:
+          hostname: offsitebuddy-systemd-custom
+          auth_key: systemd-tailscale-auth-sentinel
         init_if_missing: false
         run_initial_backup: false
         schedule: "04:15"
         backup_paths:
           - /tmp/offsitebuddy-systemd-custom-source
+        heartbeat:
+          start_url: https://unit-leak.invalid/systemd-heartbeat-sentinel
+          success_url: https://unit-leak.invalid/systemd-heartbeat-sentinel
+          failure_url: https://unit-leak.invalid/systemd-heartbeat-sentinel
         check:
           enabled: true
           schedule: "Sun *-*-* 05:00:00"
@@ -30,8 +46,6 @@
         state: directory
         mode: "0755"
       loop:
-        - /tmp/offsitebuddy-systemd-daily-repository
-        - /tmp/offsitebuddy-systemd-custom-repository
         - /tmp/offsitebuddy-systemd-daily-source
         - /tmp/offsitebuddy-systemd-custom-source
   tasks:

@@ -145,6 +145,14 @@
           - "'TS_AUTHKEY' not in item.value"
           - "'auth_key' not in item.value"
           - "'heartbeat' not in item.value"
+          - >-
+            'rest:http://synthetic:repo-sentinel@unit.invalid/'
+            not in item.value
+          - "'systemd-restic-password-sentinel' not in item.value"
+          - "'systemd-tailscale-auth-sentinel' not in item.value"
+          - >-
+            'https://unit-leak.invalid/systemd-heartbeat-sentinel'
+            not in item.value
       loop: "{{ retained_unit_content | dict2items }}"
       loop_control:
         label: "{{ item.key }}"
