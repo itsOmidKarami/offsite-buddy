@@ -1,12 +1,20 @@
 ---
 offsitebuddy_restic_image: restic/restic:0.19.0
 offsitebuddy_server_tailnet_name: bob-tailnet
+offsitebuddy_alice_server_tailnet_ip: 100.64.0.10
 
 offsitebuddy_client_jobs:
   - name: photos_to_bob
     # Credentials embedded in REST URLs must be URL-encoded.
-    repository: "rest:http://alice:{{ vault_rest_server_password_alice }}\
-      @offsitebuddy-alice.{{ offsitebuddy_server_tailnet_name }}.ts.net:8000/"
+    repository: >-
+      {{ 'rest:http://alice:' ~ (vault_rest_server_password_alice | urlencode)
+      ~ '@' ~ offsitebuddy_alice_server_tailnet_ip ~ ':8000/' }}
+    # A full MagicDNS FQDN is supported only after it resolves in the generated
+    # restic execution path (validate it with snapshots.sh).
+    # repository: >-
+    #   {{ 'rest:http://alice:' ~ (vault_rest_server_password_alice | urlencode)
+    #   ~ '@offsitebuddy-alice.' ~ offsitebuddy_server_tailnet_name
+    #   ~ '.ts.net:8000/' }}
     tailscale:
       hostname: offsitebuddy-client-photos
       auth_key: "{{ vault_tailscale_auth_key_photos_to_bob }}"

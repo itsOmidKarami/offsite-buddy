@@ -159,6 +159,30 @@ def main():
     assert "does not enforce retention" in docs, "retention non-enforcement must be explicit"
     assert "manual maintenance" in docs, "manual retention maintenance must be explicit"
 
+    endpoint_docs = read("docs/tailnet-endpoints.md").lower().replace("\n", " ")
+    assert "tailnet ip | supported reliable default for cross-tailnet docker jobs." in endpoint_docs
+    assert "full magicdns fqdn | supported after successful resolution in the generated restic path." in endpoint_docs
+    assert "generated one-shot restic container, whose in-container dns" in endpoint_docs
+    assert "is an alternative only after it resolves successfully in this generated restic execution path" in endpoint_docs
+    assert "checking resolution only from the tailscale sidecar is insufficient." in endpoint_docs
+    assert "after any re-enrollment or loss of persistent tailscale state, even if the ip appears unchanged" in endpoint_docs
+    assert "first stop and disable the affected job's backup timer and, if present, check timer." in endpoint_docs
+    assert "rediscover the ip and converge the client with `offsitebuddy_start_services: false` so the timers remain paused." in endpoint_docs
+    assert "without printing the repository url, run that job's `snapshots.sh` and `check.sh`." in endpoint_docs
+    assert "only after both succeed, run normal client convergence to enable and resume timers." in endpoint_docs
+    assert "public internet exposure is unsupported by default." in endpoint_docs
+    assert "do not echo, log, or paste a complete credential-bearing repository url" in endpoint_docs
+
+    endpoint_example = read("examples/group_vars/backup_clients.yml").lower()
+    active_repository = endpoint_example.split("    repository: >-\n", 1)[1].split(
+        "    # a full magicdns fqdn", 1
+    )[0]
+    assert "offsitebuddy_alice_server_tailnet_ip" in active_repository
+    assert "vault_rest_server_password" in active_repository
+    assert "urlencode" in active_repository
+    for literal in ("tskey-", "password123", "correcthorsebatterystaple"):
+        assert literal not in endpoint_example
+
     server_compose = read("roles/server/templates/compose.yaml.j2")
     assert 'name: "offsitebuddy-friend-{{ friend.name }}"' in server_compose
     assert "TS_USERSPACE: \"false\"" in server_compose, "tailscale must use kernel networking"

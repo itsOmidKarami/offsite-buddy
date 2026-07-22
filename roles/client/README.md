@@ -5,6 +5,13 @@ Configures OffsiteBuddy backup jobs on client hosts.
 The role renders restic helper scripts, Docker Compose files, and optional
 systemd units for each entry in `offsitebuddy_client_jobs`.
 
+## Cross-Tailnet Endpoint
+
+Use the shared server sidecar's Tailnet IP in `repository` for cross-tailnet
+Docker jobs. A full MagicDNS FQDN is supported only after it resolves in the
+generated restic execution path; short hostnames and public addresses are not
+supported defaults. See [Tailnet endpoint guidance](../../docs/tailnet-endpoints.md).
+
 ## Requirements
 
 - Docker with the Compose plugin
