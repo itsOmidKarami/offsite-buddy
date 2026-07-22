@@ -159,6 +159,18 @@ def main():
     assert "does not enforce retention" in docs, "retention non-enforcement must be explicit"
     assert "manual maintenance" in docs, "manual retention maintenance must be explicit"
 
+    endpoint_docs = read("docs/tailnet-endpoints.md").lower()
+    for text in ("reliable", "tailnet ip", "magicdns", "in-container", "re-enrollment"):
+        assert text in endpoint_docs
+    assert "public internet" in endpoint_docs
+    assert "credential-bearing" in endpoint_docs
+
+    endpoint_example = read("examples/group_vars/backup_clients.yml").lower()
+    assert "vault_rest_server_password" in endpoint_example
+    assert "urlencode" in endpoint_example
+    for literal in ("tskey-", "password123", "correcthorsebatterystaple"):
+        assert literal not in endpoint_example
+
     server_compose = read("roles/server/templates/compose.yaml.j2")
     assert 'name: "offsitebuddy-friend-{{ friend.name }}"' in server_compose
     assert "TS_USERSPACE: \"false\"" in server_compose, "tailscale must use kernel networking"
