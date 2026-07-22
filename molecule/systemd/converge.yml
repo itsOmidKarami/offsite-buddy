@@ -2,6 +2,10 @@
 - name: Converge systemd timer lifecycle
   hosts: all
   become: true
+  environment:
+    DOCKER_HOST: >-
+      {{ lookup('env', 'MOLECULE_DOCKER_HOST') |
+      default('unix:///docker.sock', true) }}
   vars:
     offsitebuddy_client_jobs:
       - name: daily_job

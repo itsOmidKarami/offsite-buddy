@@ -2,6 +2,10 @@
 - name: Disable the custom systemd check timer
   hosts: all
   become: true
+  environment:
+    DOCKER_HOST: >-
+      {{ lookup('env', 'MOLECULE_DOCKER_HOST') |
+      default('unix:///docker.sock', true) }}
   vars:
     offsitebuddy_client_jobs:
       - name: daily_job
