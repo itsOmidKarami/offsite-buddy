@@ -2,8 +2,8 @@
 
 For cross-tailnet Docker backup jobs, configure the server sidecar's Tailnet IP
 as the `repository` endpoint. This avoids relying on MagicDNS resolution from
-the generated one-shot restic container, which can use Docker's `127.0.0.11`
-embedded DNS resolver.
+the generated one-shot restic container, whose in-container DNS can use
+Docker's `127.0.0.11` embedded resolver.
 
 | Endpoint | Support |
 | --- | --- |
@@ -11,6 +11,8 @@ embedded DNS resolver.
 | Full MagicDNS FQDN | Supported after successful resolution in the generated restic path. |
 | Short hostname | Unsupported across Tailnets. |
 | Public address | Unsupported by default. |
+
+Public internet exposure is unsupported by default.
 
 ## Discover and validate a Tailnet IP
 
