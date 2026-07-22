@@ -43,6 +43,10 @@ sidecar is insufficient.
 
 ## Endpoint lifecycle
 
-Persistent Tailscale state normally preserves the Tailnet IP. If re-enrollment
-or state loss changes it, rediscover the IP, converge the client, run
-`snapshots.sh` and a repository check, and resume timers only after that proof.
+Persistent Tailscale state normally preserves the Tailnet IP. After any
+re-enrollment or loss of persistent Tailscale state, even if the IP appears
+unchanged, first stop and disable the affected job's backup timer and, if
+present, check timer. Rediscover the IP and converge the client with
+`offsitebuddy_start_services: false` so the timers remain paused. Without
+printing the repository URL, run that job's `snapshots.sh` and `check.sh`. Only
+after both succeed, run normal client convergence to enable and resume timers.
