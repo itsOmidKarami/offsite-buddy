@@ -165,7 +165,11 @@ def main():
     assert "generated one-shot restic container, whose in-container dns" in endpoint_docs
     assert "is an alternative only after it resolves successfully in this generated restic execution path" in endpoint_docs
     assert "checking resolution only from the tailscale sidecar is insufficient." in endpoint_docs
-    assert "if re-enrollment or state loss changes it, rediscover the ip, converge the client, run `snapshots.sh` and a repository check, and resume timers only after that proof." in endpoint_docs
+    assert "after any re-enrollment or loss of persistent tailscale state, even if the ip appears unchanged" in endpoint_docs
+    assert "first stop and disable the affected job's backup timer and, if present, check timer." in endpoint_docs
+    assert "rediscover the ip and converge the client with `offsitebuddy_start_services: false` so the timers remain paused." in endpoint_docs
+    assert "without printing the repository url, run that job's `snapshots.sh` and `check.sh`." in endpoint_docs
+    assert "only after both succeed, run normal client convergence to enable and resume timers." in endpoint_docs
     assert "public internet exposure is unsupported by default." in endpoint_docs
     assert "do not echo, log, or paste a complete credential-bearing repository url" in endpoint_docs
 
