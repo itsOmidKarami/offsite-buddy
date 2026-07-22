@@ -1,0 +1,30 @@
+---
+- name: Disable the custom systemd check timer
+  hosts: all
+  become: true
+  vars:
+    offsitebuddy_client_jobs:
+      - name: daily_job
+        repository: /tmp/offsitebuddy-systemd-daily-repository
+        password: test-systemd-daily-password
+        init_if_missing: false
+        run_initial_backup: false
+        schedule: "03:30"
+        backup_paths:
+          - /tmp/offsitebuddy-systemd-daily-source
+      - name: custom_job
+        repository: /tmp/offsitebuddy-systemd-custom-repository
+        password: test-systemd-custom-password
+        init_if_missing: false
+        run_initial_backup: false
+        schedule: "04:15"
+        backup_paths:
+          - /tmp/offsitebuddy-systemd-custom-source
+        check:
+          enabled: false
+          schedule: "Sun *-*-* 05:00:00"
+  tasks:
+    - name: Reconfigure systemd timer jobs
+      ansible.builtin.include_role:
+        name: itsomidkarami.offsitebuddy.client
+      no_log: true
