@@ -527,6 +527,29 @@ def main():
         "TS_USERSPACE",
     ):
         assert snippet in verify, "missing Molecule artifact check: %s" % snippet
+    generated_files = verify.split(
+        "- name: Read per-entry generated files", 1
+    )[1].split("- name: Index generated file content", 1)[0]
+    client_outputs = verify.split(
+        "- name: Stat client job outputs", 1
+    )[1].split("- name: Stat secret files", 1)[0]
+    helper_syntax = verify.split(
+        "- name: Verify helper script syntax", 1
+    )[1].split("- name: Normalize rendered server Compose files", 1)[0]
+    for name, job in (
+        ("photos", "photos_to_bob"),
+        ("documents", "documents_to_alice"),
+    ):
+        restore_path = "/etc/offsitebuddy/jobs/%s/restore.sh" % job
+        wrapper_path = "/etc/offsitebuddy/jobs/%s/restore-latest.sh" % job
+        assert "name: %s_restore\n          path: %s" % (
+            name,
+            restore_path,
+        ) in generated_files
+        assert restore_path in client_outputs
+        assert wrapper_path in client_outputs
+    for helper in ("'restore.sh'", "'restore-latest.sh'"):
+        assert helper in helper_syntax
     client_tasks = read("roles/client/tasks/restic.yml")
     client_task_defs = {
         task["name"]: task for task in yaml.safe_load(client_tasks)

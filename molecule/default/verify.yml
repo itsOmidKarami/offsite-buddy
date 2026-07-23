@@ -38,7 +38,7 @@
         - name: photos_check
           path: /etc/offsitebuddy/jobs/photos_to_bob/check.sh
         - name: photos_restore
-          path: /etc/offsitebuddy/jobs/photos_to_bob/restore-latest.sh
+          path: /etc/offsitebuddy/jobs/photos_to_bob/restore.sh
         - name: photos_snapshots
           path: /etc/offsitebuddy/jobs/photos_to_bob/snapshots.sh
         - name: photos_stats
@@ -50,7 +50,7 @@
         - name: documents_check
           path: /etc/offsitebuddy/jobs/documents_to_alice/check.sh
         - name: documents_restore
-          path: /etc/offsitebuddy/jobs/documents_to_alice/restore-latest.sh
+          path: /etc/offsitebuddy/jobs/documents_to_alice/restore.sh
         - name: documents_snapshots
           path: /etc/offsitebuddy/jobs/documents_to_alice/snapshots.sh
         - name: documents_stats
@@ -140,6 +140,7 @@
         - /etc/offsitebuddy/jobs/photos_to_bob/excludes
         - /etc/offsitebuddy/jobs/photos_to_bob/init.sh
         - /etc/offsitebuddy/jobs/photos_to_bob/check.sh
+        - /etc/offsitebuddy/jobs/photos_to_bob/restore.sh
         - /etc/offsitebuddy/jobs/photos_to_bob/restore-latest.sh
         - /etc/offsitebuddy/jobs/photos_to_bob/snapshots.sh
         - /etc/offsitebuddy/jobs/photos_to_bob/stats.sh
@@ -147,6 +148,7 @@
         - /etc/offsitebuddy/jobs/documents_to_alice/excludes
         - /etc/offsitebuddy/jobs/documents_to_alice/init.sh
         - /etc/offsitebuddy/jobs/documents_to_alice/check.sh
+        - /etc/offsitebuddy/jobs/documents_to_alice/restore.sh
         - /etc/offsitebuddy/jobs/documents_to_alice/restore-latest.sh
         - /etc/offsitebuddy/jobs/documents_to_alice/snapshots.sh
         - /etc/offsitebuddy/jobs/documents_to_alice/stats.sh
@@ -202,6 +204,7 @@
             'backup.sh',
             'init.sh',
             'check.sh',
+            'restore.sh',
             'restore-latest.sh',
             'snapshots.sh',
             'stats.sh'
