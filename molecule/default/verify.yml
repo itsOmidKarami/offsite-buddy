@@ -19,6 +19,10 @@
           path: /srv/offsitebuddy/friends/alice/htpasswd
         - name: bob_htpasswd
           path: /srv/offsitebuddy/friends/bob/htpasswd
+        - name: alice_maintenance_compose
+          path: /srv/offsitebuddy/friends/alice/compose.maintenance.yaml
+        - name: alice_maintenance_helper
+          path: /srv/offsitebuddy/friends/alice/maintenance-endpoint.sh
         - name: photos_compose
           path: /etc/offsitebuddy/jobs/photos_to_bob/compose.yaml
         - name: documents_compose
@@ -77,6 +81,19 @@
       register: generated_files
       no_log: true
 
+    - name: Stat read-write maintenance files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /srv/offsitebuddy/friends/bob/compose.maintenance.yaml
+        - /srv/offsitebuddy/friends/bob/maintenance-endpoint.sh
+      register: bob_maintenance_file_stats
+
+    - name: Verify maintenance helper syntax
+      ansible.builtin.command:
+        cmd: bash -n /srv/offsitebuddy/friends/alice/maintenance-endpoint.sh
+      changed_when: false
+
     - name: Index generated file content
       ansible.builtin.set_fact:
         generated_content: >-
@@ -84,6 +101,24 @@
              combine({item.item.name: item.content | b64decode}) }}
       loop: "{{ generated_files.results }}"
       no_log: true
+
+    - name: Validate maintenance Compose configuration
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-maintenance-alice
+          - -f
+          - "-"
+          - config
+          - --quiet
+        stdin: "{{ generated_content.alice_maintenance_compose }}"
+      changed_when: false
+      delegate_to: localhost
+      become: false
+      environment:
+        TS_AUTHKEY: molecule-compose-validation
 
     - name: Parse generated Compose files
       ansible.builtin.set_fact:
@@ -458,7 +493,7 @@
           - >-
             normalized_server_artifacts.bob.services['rest-server']
             .environment.OPTIONS
-            is search('--append-only')
+            is not search('--append-only')
           - >-
             normalized_server_artifacts.bob.services['rest-server']
             .environment.OPTIONS
@@ -525,6 +560,9 @@
             tailscale_state_stats.results | map(attribute='stat.mode') | list
             == ['0700', '0700', '0700', '0700']
           - unit_stats.results | map(attribute='stat.exists') | min
+          - >-
+            bob_maintenance_file_stats.results | map(attribute='stat.exists')
+            | list == [false, false]
 
     - name: Verify access-mode transitions
       ansible.builtin.import_tasks: tasks/verify_access_modes.yml

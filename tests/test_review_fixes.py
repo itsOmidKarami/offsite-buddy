@@ -190,6 +190,17 @@ def main():
     assert "devices:" in server_compose, "tailscale must map /dev/net/tun as a device"
     assert "NET_RAW" in server_compose, "tailscale should include NET_RAW capability"
     assert "type: bind" in server_compose, "server volumes should use long-form bind mounts"
+    maintenance_compose = read("roles/server/templates/compose.maintenance.yaml.j2")
+    maintenance_helper = read("roles/server/templates/maintenance-endpoint.sh.j2")
+    assert "--append-only" not in maintenance_compose
+    assert "friend.quota.path" in maintenance_compose
+    assert "./htpasswd" in maintenance_compose
+    assert "trap cleanup EXIT" in maintenance_helper
+    for signal in ("HUP", "INT", "TERM"):
+        assert signal in maintenance_helper
+    assert 'compose.yaml" up -d' in maintenance_helper
+    assert "exit \"$restore_status\"" in maintenance_helper
+    assert "maintenance-endpoint.sh" in read("roles/server/tasks/rest_server.yml")
     server_tasks = read("roles/server/tasks/rest_server.yml")
     server_cleanup = read("roles/server/tasks/cleanup.yml")
     assert 'project_name: "offsitebuddy-friend-{{ friend_name }}"' in server_tasks
