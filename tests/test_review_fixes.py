@@ -159,6 +159,16 @@ def main():
     docs = read("docs/append-only-maintenance.md").lower()
     assert "does not enforce retention" in docs, "retention non-enforcement must be explicit"
     assert "manual maintenance" in docs, "manual retention maintenance must be explicit"
+    for text in (
+        "--dry-run",
+        "--keep-within",
+        "maintenance-endpoint.sh",
+        "forget --prune",
+        "restic check",
+        "restore-latest.sh",
+        "append-only",
+    ):
+        assert text in docs
 
     endpoint_docs = read("docs/tailnet-endpoints.md").lower().replace("\n", " ")
     assert "tailnet ip | supported reliable default for cross-tailnet docker jobs." in endpoint_docs
