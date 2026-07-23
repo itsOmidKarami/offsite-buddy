@@ -159,6 +159,41 @@ def main():
     docs = read("docs/append-only-maintenance.md").lower()
     assert "does not enforce retention" in docs, "retention non-enforcement must be explicit"
     assert "manual maintenance" in docs, "manual retention maintenance must be explicit"
+    for text in (
+        "--dry-run",
+        "--keep-within",
+        "maintenance-endpoint.sh",
+        "forget --prune",
+        "restic check",
+        "restore-latest.sh",
+        "append-only",
+    ):
+        assert text in docs
+    for command in (
+        "-f /srv/offsitebuddy/friends/alice/compose.yaml",
+        "-f /srv/offsitebuddy/friends/alice/compose.maintenance.yaml",
+        "while sudo systemctl is-active --quiet offsitebuddy-backup-photos_to_alice.service",
+        "while sudo systemctl is-active --quiet offsitebuddy-check-photos_to_alice.service",
+        "preflight_restore=\"$(sudo mktemp -d /tmp/offsitebuddy-restore-photos-to-alice-preflight.xxxxxx)\"",
+        "post_prune_restore=\"$(sudo mktemp -d /tmp/offsitebuddy-restore-photos-to-alice-post-prune.xxxxxx)\"",
+        "label=com.docker.compose.project=offsitebuddy-maintenance-friend-alice",
+        "grep '^options=.*--append-only'",
+    ):
+        assert command in docs
+    assert "offsitebuddy_server_root" in docs
+    assert "offsitebuddy_client_root" in docs
+    post_close_docs = docs.split("## restore append-only operation", 1)[1].split(
+        "## failure handling", 1
+    )[0]
+    assert post_close_docs.index("offsitebuddy-maintenance-friend-alice") < (
+        post_close_docs.index('label=com.docker.compose.project=offsitebuddy-friend-alice"')
+    ) < post_close_docs.index("options=.*--append-only") < post_close_docs.index(
+        "/etc/offsitebuddy/jobs/photos_to_alice/check.sh"
+    )
+    failure_docs = docs.split("## failure handling", 1)[1]
+    assert failure_docs.index("compose.maintenance.yaml down --remove-orphans") < (
+        failure_docs.index("compose.yaml up -d")
+    )
 
     endpoint_docs = read("docs/tailnet-endpoints.md").lower().replace("\n", " ")
     assert "tailnet ip | supported reliable default for cross-tailnet docker jobs." in endpoint_docs
@@ -190,6 +225,32 @@ def main():
     assert "devices:" in server_compose, "tailscale must map /dev/net/tun as a device"
     assert "NET_RAW" in server_compose, "tailscale should include NET_RAW capability"
     assert "type: bind" in server_compose, "server volumes should use long-form bind mounts"
+    maintenance_compose = read("roles/server/templates/compose.maintenance.yaml.j2")
+    maintenance_helper = read("roles/server/templates/maintenance-endpoint.sh.j2")
+    maintenance_verify = read("molecule/default/verify.yml")
+    assert (
+        'name: "offsitebuddy-maintenance-friend-{{ maintenance_item.0.name }}"'
+        in maintenance_compose
+    )
+    assert 'name: "offsitebuddy-friend-{{ friend.name }}-maintenance"' not in maintenance_compose
+    ordinary_collision_project = "offsitebuddy-friend-alice-maintenance"
+    maintenance_alice_project = "offsitebuddy-maintenance-friend-alice"
+    assert ordinary_collision_project != maintenance_alice_project
+    assert "--append-only" not in maintenance_compose
+    assert "maintenance_item.0.quota.path" in maintenance_compose
+    assert "./htpasswd" in maintenance_compose
+    assert "trap cleanup EXIT" in maintenance_helper
+    for signal in ("HUP", "INT", "TERM"):
+        assert signal in maintenance_helper
+    assert 'compose.yaml" up -d' in maintenance_helper
+    assert "exit \"$restore_status\"" in maintenance_helper
+    assert "artifact_status=$?" in maintenance_helper
+    assert "exit \"$artifact_status\"" in maintenance_helper
+    maintenance_validation = maintenance_verify.split(
+        "- name: Validate maintenance Compose configuration", 1
+    )[1].split("- name: Parse generated Compose files", 1)[0]
+    assert "--project-name" not in maintenance_validation
+    assert "maintenance-endpoint.sh" in read("roles/server/tasks/rest_server.yml")
     server_tasks = read("roles/server/tasks/rest_server.yml")
     server_cleanup = read("roles/server/tasks/cleanup.yml")
     assert 'project_name: "offsitebuddy-friend-{{ friend_name }}"' in server_tasks
@@ -322,6 +383,10 @@ def main():
         server_identity_preflight
     )
     assert "offsitebuddy_cleanup_stale" not in server_identity_preflight
+    assert "current_maintenance_project_names" in server_identity_preflight
+    assert "offsitebuddy_append_only_maintenance_project_names" in (
+        server_identity_preflight
+    )
 
     server_readme = read("roles/server/README.md")
     assert "before friend-specific files change" in server_readme
@@ -349,7 +414,7 @@ def main():
     assert "legacy_teardown_root" in cleanup_side_effect
     assert cleanup_side_effect.count(
         'project_src: "{{ legacy_teardown_root }}"'
-    ) == 6
+    ) == 7
     assert "Require server identity shadow refusal with cleanup disabled" in (
         cleanup_side_effect
     )
@@ -359,13 +424,27 @@ def main():
     assert "Exercise stale client generic Compose refusal before deletion" in (
         cleanup_side_effect
     )
+    assert "offsitebuddy-friend-{{ server_shadow_current }}" in cleanup_side_effect
+    assert "server_maintenance_shadow_legacy" in cleanup_side_effect
+    assert "Exercise server maintenance identity shadow refusal" in (
+        cleanup_side_effect
+    )
+    assert "offsitebuddy-maintenance-friend-{{ server_shadow_current }}" in (
+        cleanup_side_effect
+    )
+    assert "server_maintenance_shadow_root: >-" in cleanup_side_effect
+    assert "server_maintenance_shadow_root ~ '/friends/' ~" in cleanup_side_effect
+    assert (
+        'offsitebuddy_server_root: "{{ server_maintenance_shadow_root }}"'
+        in cleanup_side_effect
+    )
 
     cleanup_molecule = read("molecule/cleanup/molecule.yml")
     cleanup_playbook = read("molecule/cleanup/cleanup.yml")
     assert "cleanup: cleanup.yml" in cleanup_molecule
     assert "offsitebuddy.cleanup-fixture" in cleanup_playbook
     assert "offsitebuddy.cleanup-fixture" in cleanup_prepare
-    assert cleanup_side_effect.count("offsitebuddy.cleanup-fixture") == 12
+    assert cleanup_side_effect.count("offsitebuddy.cleanup-fixture") == 14
 
     server_validate = read("roles/server/tasks/validate.yml")
     assert "offsitebuddy_friends | map(attribute='name')" in server_validate, "server friend names must be unique"
@@ -392,7 +471,13 @@ def main():
         assert snippet in server_validate, "missing server validation: %s" % snippet
     assert "not offsitebuddy_cleanup_stale | bool or offsitebuddy_start_services | bool" in server_validate
     assert "offsitebuddy-friend-" in server_validate
+    assert "offsitebuddy-maintenance-friend-" in server_validate
     assert "intersect" in server_validate
+    assert "maintenance_item.0" in server_tasks
+    assert "maintenance_item.1" in server_tasks
+    assert "maintenance_cleanup.0" in server_tasks
+    assert "maintenance_cleanup.1" in server_tasks
+    assert "maintenance_artifact" not in server_tasks
 
     quota_validate = read("roles/quota/tasks/main.yml")
     assert "item.path | regex_search('^/')" in quota_validate, (

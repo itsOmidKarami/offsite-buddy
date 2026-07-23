@@ -1,0 +1,38 @@
+---
+name: "offsitebuddy-maintenance-friend-{{ maintenance_item.0.name }}"
+services:
+  tailscale:
+    image: "{{ offsitebuddy_tailscale_image }}"
+    hostname: "{{ maintenance_item.0.tailscale.hostname }}"
+    environment:
+      TS_AUTHKEY: "${TS_AUTHKEY}"
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_HOSTNAME: "{{ maintenance_item.0.tailscale.hostname }}"
+      TS_USERSPACE: "false"
+    volumes:
+      - ./tailscale-state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: unless-stopped
+
+  rest-server:
+    image: "{{ offsitebuddy_rest_server_image }}"
+    network_mode: service:tailscale
+    depends_on:
+      - tailscale
+    environment:
+      PASSWORD_FILE: /run/secrets/htpasswd
+      OPTIONS: >-
+        --listen :{{ maintenance_item.0.rest_server.port | default(8000) | int }}
+    volumes:
+      - type: bind
+        source: "{{ maintenance_item.0.quota.path }}"
+        target: /data
+      - type: bind
+        source: ./htpasswd
+        target: /run/secrets/htpasswd
+        read_only: true
+    restart: unless-stopped

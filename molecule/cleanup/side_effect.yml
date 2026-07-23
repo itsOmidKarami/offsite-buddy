@@ -25,9 +25,13 @@
       /tmp/offsitebuddy-cleanup-side-effect-current-client-source
     server_shadow_root: >-
       /srv/offsitebuddy-cleanup-side-effect/server-shadow
+    server_maintenance_shadow_root: >-
+      /srv/offsitebuddy-cleanup-side-effect/server-maintenance-shadow
     server_shadow_current: >-
       cleanup-shadow-server-current-{{ ansible_facts['hostname'] }}
     server_shadow_legacy: "offsitebuddy-friend-{{ server_shadow_current }}"
+    server_maintenance_shadow_legacy: >-
+      offsitebuddy-maintenance-friend-{{ server_shadow_current }}
     server_shadow_quota: >-
       /tmp/offsitebuddy-cleanup-side-effect-server-shadow-quota
     client_shadow_root: >-
@@ -64,6 +68,7 @@
       - "{{ current_client_legacy_job }}"
       - "{{ stale_client_legacy_job }}"
       - "{{ server_shadow_legacy }}"
+      - "{{ server_maintenance_shadow_legacy }}"
       - "{{ client_shadow_legacy }}"
       - "offsitebuddy-client-{{ client_unloaded_active_job }}"
   tasks:
@@ -379,6 +384,170 @@
             that:
               - server_shadow_fixture_resources.containers | length == 0
               - server_shadow_fixture_resources.networks | length == 0
+
+    - name: Exercise server maintenance identity shadow refusal
+      vars:
+        server_maintenance_shadow_path: >-
+          {{
+            server_maintenance_shadow_root ~ '/friends/' ~
+            server_maintenance_shadow_legacy
+          }}
+      block:
+        - name: Create server maintenance identity shadow directory
+          ansible.builtin.file:
+            path: "{{ server_maintenance_shadow_path }}"
+            state: directory
+            mode: "0755"
+
+        - name: Create server maintenance identity shadow managed files
+          ansible.builtin.copy:
+            dest: >-
+              {{ server_maintenance_shadow_path }}/{{ item }}
+            content: preserved
+            mode: "0600"
+          loop:
+            - .offsitebuddy-managed
+            - sentinel
+
+        - name: Create server maintenance identity shadow Compose definition
+          ansible.builtin.copy:
+            dest: >-
+              {{ server_maintenance_shadow_path }}/compose.yaml
+            mode: "0600"
+            content: |
+              ---
+              services:
+                fixture:
+                  image: alpine:3.20
+                  command: ["sleep", "infinity"]
+                  labels:
+                    offsitebuddy.cleanup-fixture: >-
+                      {{ ansible_facts['hostname'] }}
+              networks:
+                default:
+                  labels:
+                    offsitebuddy.cleanup-fixture: >-
+                      {{ ansible_facts['hostname'] }}
+
+        - name: Start server maintenance identity shadow Compose project
+          community.docker.docker_compose_v2:
+            project_src: >-
+              {{ server_maintenance_shadow_path }}
+            project_name: "{{ server_maintenance_shadow_legacy }}"
+            files:
+              - compose.yaml
+            state: present
+
+        - name: Record server maintenance identity shadow Compose checksum
+          ansible.builtin.stat:
+            path: >-
+              {{ server_maintenance_shadow_path }}/compose.yaml
+            get_checksum: true
+          register: server_maintenance_shadow_compose_before
+
+        - name: Require server maintenance identity shadow refusal
+          block:
+            - name: Invoke server main against a maintenance identity shadow
+              ansible.builtin.include_role:
+                name: server
+                tasks_from: main.yml
+              vars:
+                offsitebuddy_server_root: "{{ server_maintenance_shadow_root }}"
+                offsitebuddy_cleanup_stale: false
+                offsitebuddy_start_services: true
+                offsitebuddy_friends:
+                  - name: "{{ server_shadow_current }}"
+                    quota:
+                      path: "{{ server_shadow_quota }}"
+                      enforced: true
+                      enforcement_note: Molecule identity shadow fixture
+                    tailscale:
+                      hostname: "{{ server_shadow_current }}"
+                      auth_key: molecule-server-shadow-auth-key
+                    rest_server:
+                      username: cleanup-server-shadow
+                      password: cleanup-server-shadow-fixture
+
+            - name: Fail if server maintenance identity shadow is accepted
+              ansible.builtin.fail:
+                msg: >-
+                  Server maintenance identity shadow unexpectedly passed
+                  preflight.
+          rescue:
+            - name: Assert server maintenance identity shadow refusal is safe
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    ansible_failed_task.name is search(
+                      'Refuse managed friend names that shadow current '
+                      'Compose projects'
+                    )
+                  - >-
+                    (ansible_failed_result | to_json) is search(
+                      server_maintenance_shadow_legacy
+                    )
+
+        - name: Check server maintenance identity shadow state after refusal
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            get_checksum: true
+          loop:
+            - >-
+              {{
+                server_maintenance_shadow_root ~ '/friends/' ~
+                server_shadow_current
+              }}
+            - >-
+              {{ server_maintenance_shadow_path }}/.offsitebuddy-managed
+            - >-
+              {{ server_maintenance_shadow_path }}/sentinel
+            - >-
+              {{ server_maintenance_shadow_path }}/compose.yaml
+          register: server_maintenance_shadow_files
+
+        - name: Verify server maintenance identity shadow refusal
+          ansible.builtin.assert:
+            that:
+              - not server_maintenance_shadow_files.results[0].stat.exists
+              - server_maintenance_shadow_files.results[1].stat.exists
+              - server_maintenance_shadow_files.results[2].stat.exists
+              - >-
+                server_maintenance_shadow_files.results[3].stat.checksum ==
+                server_maintenance_shadow_compose_before.stat.checksum
+      always:
+        - name: Tear down server maintenance identity shadow fixture
+          community.docker.docker_compose_v2:
+            project_src: "{{ legacy_teardown_root }}"
+            project_name: "{{ server_maintenance_shadow_legacy }}"
+            files:
+              - compose.yaml
+            state: absent
+            remove_orphans: true
+
+        - name: Inspect server maintenance identity shadow fixture resources
+          community.docker.docker_host_info:
+            containers: true
+            containers_all: true
+            containers_filters:
+              label: >-
+                com.docker.compose.project={{
+                server_maintenance_shadow_legacy }}
+            networks: true
+            networks_filters:
+              label: >-
+                com.docker.compose.project={{
+                server_maintenance_shadow_legacy }}
+          register: server_maintenance_shadow_fixture_resources
+
+        - name: Verify server maintenance identity shadow fixture did not leak
+          ansible.builtin.assert:
+            that:
+              - >-
+                server_maintenance_shadow_fixture_resources.containers | length
+                == 0
+              - >-
+                server_maintenance_shadow_fixture_resources.networks | length
+                == 0
 
     - name: Exercise client identity shadow refusal with cleanup disabled
       block:
