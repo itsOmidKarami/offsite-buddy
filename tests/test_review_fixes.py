@@ -169,6 +169,31 @@ def main():
         "append-only",
     ):
         assert text in docs
+    for command in (
+        "-f /srv/offsitebuddy/friends/alice/compose.yaml",
+        "-f /srv/offsitebuddy/friends/alice/compose.maintenance.yaml",
+        "while sudo systemctl is-active --quiet offsitebuddy-backup-photos_to_alice.service",
+        "while sudo systemctl is-active --quiet offsitebuddy-check-photos_to_alice.service",
+        "preflight_restore=\"$(sudo mktemp -d /tmp/offsitebuddy-restore-photos-to-alice-preflight.xxxxxx)\"",
+        "post_prune_restore=\"$(sudo mktemp -d /tmp/offsitebuddy-restore-photos-to-alice-post-prune.xxxxxx)\"",
+        "label=com.docker.compose.project=offsitebuddy-friend-alice-maintenance",
+        "grep '^options=.*--append-only'",
+    ):
+        assert command in docs
+    assert "offsitebuddy_server_root" in docs
+    assert "offsitebuddy_client_root" in docs
+    post_close_docs = docs.split("## restore append-only operation", 1)[1].split(
+        "## failure handling", 1
+    )[0]
+    assert post_close_docs.index("offsitebuddy-friend-alice-maintenance") < (
+        post_close_docs.index('label=com.docker.compose.project=offsitebuddy-friend-alice"')
+    ) < post_close_docs.index("options=.*--append-only") < post_close_docs.index(
+        "/etc/offsitebuddy/jobs/photos_to_alice/check.sh"
+    )
+    failure_docs = docs.split("## failure handling", 1)[1]
+    assert failure_docs.index("compose.maintenance.yaml down --remove-orphans") < (
+        failure_docs.index("compose.yaml up -d")
+    )
 
     endpoint_docs = read("docs/tailnet-endpoints.md").lower().replace("\n", " ")
     assert "tailnet ip | supported reliable default for cross-tailnet docker jobs." in endpoint_docs

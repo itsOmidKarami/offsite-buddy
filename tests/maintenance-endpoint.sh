@@ -38,6 +38,10 @@ assert_eq() {
   [ "$1" = "$2" ] || fail "expected [$2], got [$1]"
 }
 
+assert_file_exists() {
+  [ -e "$1" ] || fail "expected file to exist: $1"
+}
+
 command_line() {
   local line
   local last_line=""
@@ -113,6 +117,14 @@ if [ "${FAKE_DOCKER_FAIL_NORMAL_UP:-}" = 1 ] &&
   [ "${@: -1}" = -d ]; then
   exit 42
 fi
+
+if [ "${FAKE_DOCKER_FAIL_MAINTENANCE_DOWN:-}" = 1 ] &&
+  [ "$#" -ge 3 ] &&
+  [[ "${@: -3:1}" == */compose.maintenance.yaml ]] &&
+  [ "${@: -2:1}" = down ] &&
+  [ "${@: -1}" = --remove-orphans ]; then
+  exit 55
+fi
 EOF
 chmod +x "$fake_bin/docker"
 
@@ -159,5 +171,19 @@ printf '\n' | PATH="$fake_bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
 restore_failure_status=$?
 set -e
 assert_eq "$restore_failure_status" 42
+
+render_helper maintenance-down-failure
+: > "$docker_log"
+set +e
+printf '\n' | PATH="$fake_bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
+  FAKE_DOCKER_FAIL_MAINTENANCE_DOWN=1 "$job_dir/maintenance-endpoint.sh" >/dev/null
+maintenance_down_status=$?
+set -e
+assert_eq "$maintenance_down_status" 55
+maintenance_down_restore="$(compose_command "$job_dir/compose.yaml" up -d)"
+assert_eq "$(command_line)" "$maintenance_down_restore"
+assert_eq "$(ordinary_restore_count)" 1
+assert_file_exists "$job_dir/compose.maintenance.yaml"
+assert_file_exists "$job_dir/maintenance-endpoint.sh"
 
 printf 'maintenance endpoint trap checks passed\n'
