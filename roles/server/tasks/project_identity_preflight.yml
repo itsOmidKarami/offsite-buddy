@@ -12,13 +12,17 @@
 - name: Refuse managed friend names that shadow current Compose projects
   vars:
     managed_friend_name: "{{ item.path | dirname | basename }}"
-    current_project_names: >-
+    current_ordinary_project_names: >-
       {{
         offsitebuddy_friends
         | map(attribute='name')
         | map('regex_replace', '^', 'offsitebuddy-friend-')
         | list
       }}
+    current_maintenance_project_names: >-
+      {{ offsitebuddy_append_only_maintenance_project_names }}
+    current_project_names: >-
+      {{ current_ordinary_project_names + current_maintenance_project_names }}
   ansible.builtin.assert:
     that:
       - managed_friend_name not in current_project_names

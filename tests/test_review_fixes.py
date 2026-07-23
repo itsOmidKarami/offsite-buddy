@@ -229,7 +229,7 @@ def main():
     maintenance_helper = read("roles/server/templates/maintenance-endpoint.sh.j2")
     maintenance_verify = read("molecule/default/verify.yml")
     assert (
-        'name: "offsitebuddy-maintenance-friend-{{ friend.name }}"'
+        'name: "offsitebuddy-maintenance-friend-{{ maintenance_item.0.name }}"'
         in maintenance_compose
     )
     assert 'name: "offsitebuddy-friend-{{ friend.name }}-maintenance"' not in maintenance_compose
@@ -237,7 +237,7 @@ def main():
     maintenance_alice_project = "offsitebuddy-maintenance-friend-alice"
     assert ordinary_collision_project != maintenance_alice_project
     assert "--append-only" not in maintenance_compose
-    assert "friend.quota.path" in maintenance_compose
+    assert "maintenance_item.0.quota.path" in maintenance_compose
     assert "./htpasswd" in maintenance_compose
     assert "trap cleanup EXIT" in maintenance_helper
     for signal in ("HUP", "INT", "TERM"):
@@ -383,6 +383,10 @@ def main():
         server_identity_preflight
     )
     assert "offsitebuddy_cleanup_stale" not in server_identity_preflight
+    assert "current_maintenance_project_names" in server_identity_preflight
+    assert "offsitebuddy_append_only_maintenance_project_names" in (
+        server_identity_preflight
+    )
 
     server_readme = read("roles/server/README.md")
     assert "before friend-specific files change" in server_readme
@@ -410,7 +414,7 @@ def main():
     assert "legacy_teardown_root" in cleanup_side_effect
     assert cleanup_side_effect.count(
         'project_src: "{{ legacy_teardown_root }}"'
-    ) == 6
+    ) == 7
     assert "Require server identity shadow refusal with cleanup disabled" in (
         cleanup_side_effect
     )
@@ -420,13 +424,21 @@ def main():
     assert "Exercise stale client generic Compose refusal before deletion" in (
         cleanup_side_effect
     )
+    assert "offsitebuddy-friend-{{ server_shadow_current }}" in cleanup_side_effect
+    assert "server_maintenance_shadow_legacy" in cleanup_side_effect
+    assert "Exercise server maintenance identity shadow refusal" in (
+        cleanup_side_effect
+    )
+    assert "offsitebuddy-maintenance-friend-{{ server_shadow_current }}" in (
+        cleanup_side_effect
+    )
 
     cleanup_molecule = read("molecule/cleanup/molecule.yml")
     cleanup_playbook = read("molecule/cleanup/cleanup.yml")
     assert "cleanup: cleanup.yml" in cleanup_molecule
     assert "offsitebuddy.cleanup-fixture" in cleanup_playbook
     assert "offsitebuddy.cleanup-fixture" in cleanup_prepare
-    assert cleanup_side_effect.count("offsitebuddy.cleanup-fixture") == 12
+    assert cleanup_side_effect.count("offsitebuddy.cleanup-fixture") == 14
 
     server_validate = read("roles/server/tasks/validate.yml")
     assert "offsitebuddy_friends | map(attribute='name')" in server_validate, "server friend names must be unique"
@@ -453,7 +465,13 @@ def main():
         assert snippet in server_validate, "missing server validation: %s" % snippet
     assert "not offsitebuddy_cleanup_stale | bool or offsitebuddy_start_services | bool" in server_validate
     assert "offsitebuddy-friend-" in server_validate
+    assert "offsitebuddy-maintenance-friend-" in server_validate
     assert "intersect" in server_validate
+    assert "maintenance_item.0" in server_tasks
+    assert "maintenance_item.1" in server_tasks
+    assert "maintenance_cleanup.0" in server_tasks
+    assert "maintenance_cleanup.1" in server_tasks
+    assert "maintenance_artifact" not in server_tasks
 
     quota_validate = read("roles/quota/tasks/main.yml")
     assert "item.path | regex_search('^/')" in quota_validate, (

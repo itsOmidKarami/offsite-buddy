@@ -79,6 +79,10 @@
       loop_control:
         loop_var: invalid_rest_server_mode
 
+    - name: Exercise actual server maintenance identity validation
+      ansible.builtin.include_tasks: >-
+        tasks/assert-maintenance-identity-collision.yml
+
     - name: Assert invalid client tailscale config is rejected
       ansible.builtin.assert:
         that:

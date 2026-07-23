@@ -95,7 +95,7 @@ render_helper() {
   mkdir -p "$job_dir"
   local rendered_helper
   rendered_helper="$(<"$helper_template")"
-  rendered_helper="${rendered_helper//\{\{ friend.name \}\}/test-friend}"
+  rendered_helper="${rendered_helper//\{\{ maintenance_item.0.name \}\}/test-friend}"
   printf '%s\n' "$rendered_helper" > "$job_dir/maintenance-endpoint.sh"
   : > "$job_dir/compose.yaml"
   : > "$job_dir/compose.maintenance.yaml"

@@ -42,5 +42,5 @@ docker compose --project-directory "$job_dir" \
 docker compose --project-directory "$job_dir" \
   -f "$job_dir/compose.maintenance.yaml" up -d
 printf '%s\n' \
-  'Maintenance endpoint active for {{ friend.name }}. Press Enter to restore append-only mode.'
+  'Maintenance endpoint active for {{ maintenance_item.0.name }}. Press Enter to restore append-only mode.'
 read -r _
