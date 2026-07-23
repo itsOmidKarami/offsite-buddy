@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.10](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.9...v0.1.10) (2026-07-23)
+
+
+### Features
+
+* add snapshot-selective restore ([#34](https://github.com/itsOmidKarami/offsite-buddy/issues/34)) ([157a3d2](https://github.com/itsOmidKarami/offsite-buddy/commit/157a3d2f7990e5a9dcebbee9ae8e61f7d6da43fa))
+
 ## [0.1.9](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.8...v0.1.9) (2026-07-21)
 
 
