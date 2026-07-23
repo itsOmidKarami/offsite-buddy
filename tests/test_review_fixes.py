@@ -738,6 +738,11 @@ def main():
     ):
         assert snippet in restore, "missing restore target guard: %s" % snippet
 
+    restore = read("roles/client/templates/restore.sh.j2")
+    for snippet in ("--snapshot", "--include", "args=(restore", "--target", "--verbose=2"):
+        assert snippet in restore
+    assert "eval " not in restore
+
     e2e = read("tests/e2e-local.yml")
     for snippet in (
         "ansible_python_interpreter",
@@ -745,8 +750,14 @@ def main():
         "run_initial_backup: true",
         "snapshots.sh",
         "check.sh",
+        "restore.sh",
         "restore-latest.sh",
         "proof.txt",
+        "second-only.txt",
+        "offsitebuddy_e2e_snapshot_list",
+        "--json",
+        "--snapshot",
+        "--include",
     ):
         assert snippet in e2e, "missing e2e backup/restore check: %s" % snippet
 

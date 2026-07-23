@@ -11,6 +11,8 @@
     offsitebuddy_e2e_source: "{{ offsitebuddy_e2e_base }}/source"
     offsitebuddy_e2e_repo: "{{ offsitebuddy_e2e_base }}/repo"
     offsitebuddy_e2e_restore: "{{ offsitebuddy_e2e_base }}/restore"
+    offsitebuddy_e2e_old_restore: "{{ offsitebuddy_e2e_base }}/old-restore"
+    offsitebuddy_e2e_selective_restore: "{{ offsitebuddy_e2e_base }}/selective-restore"
     offsitebuddy_e2e_job_root: "{{ offsitebuddy_e2e_base }}/jobs/local_smoke"
     offsitebuddy_client_root: "{{ offsitebuddy_e2e_base }}/jobs"
     offsitebuddy_client_owner: "{{ lookup('pipe', 'id -un') }}"
@@ -53,6 +55,8 @@
         - "{{ offsitebuddy_e2e_source }}"
         - "{{ offsitebuddy_e2e_repo }}"
         - "{{ offsitebuddy_e2e_restore }}"
+        - "{{ offsitebuddy_e2e_old_restore }}"
+        - "{{ offsitebuddy_e2e_selective_restore }}"
 
     - name: Write e2e proof file
       ansible.builtin.copy:
@@ -62,6 +66,58 @@
   roles:
     - role: client
   post_tasks:
+    - name: Update e2e proof for second snapshot
+      ansible.builtin.copy:
+        content: "offsitebuddy e2e second proof\n"
+        dest: "{{ offsitebuddy_e2e_source }}/proof.txt"
+        mode: "0644"
+
+    - name: Write second-snapshot-only proof file
+      ansible.builtin.copy:
+        content: "offsitebuddy e2e second-only proof\n"
+        dest: "{{ offsitebuddy_e2e_source }}/second-only.txt"
+        mode: "0644"
+
+    - name: Create second snapshot
+      ansible.builtin.command:
+        cmd: "{{ offsitebuddy_e2e_job_root }}/backup.sh"
+      changed_when: false
+
+    - name: Capture snapshot IDs
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-directory
+          - "{{ offsitebuddy_e2e_job_root }}"
+          - run
+          - --rm
+          - restic
+          - snapshots
+          - --json
+      register: offsitebuddy_e2e_snapshot_list
+      changed_when: false
+
+    - name: Sort e2e snapshots by time
+      ansible.builtin.set_fact:
+        offsitebuddy_e2e_snapshots: >-
+          {{ offsitebuddy_e2e_snapshot_list.stdout | from_json | sort(attribute='time') }}
+
+    - name: Require two e2e snapshots
+      ansible.builtin.assert:
+        that:
+          - offsitebuddy_e2e_snapshots | length >= 2
+
+    - name: Capture older and latest snapshot IDs
+      ansible.builtin.set_fact:
+        offsitebuddy_e2e_old_snapshot_id: "{{ (offsitebuddy_e2e_snapshots | first).id }}"
+        offsitebuddy_e2e_latest_snapshot_id: "{{ (offsitebuddy_e2e_snapshots | last).id }}"
+
+    - name: Require distinct older and latest snapshot IDs
+      ansible.builtin.assert:
+        that:
+          - offsitebuddy_e2e_old_snapshot_id != offsitebuddy_e2e_latest_snapshot_id
+
     - name: List snapshots
       ansible.builtin.command:
         cmd: "{{ offsitebuddy_e2e_job_root }}/snapshots.sh"
@@ -71,6 +127,68 @@
       ansible.builtin.command:
         cmd: "{{ offsitebuddy_e2e_job_root }}/check.sh"
       changed_when: false
+
+    - name: Restore older snapshot
+      ansible.builtin.command:
+        argv:
+          - "{{ offsitebuddy_e2e_job_root }}/restore.sh"
+          - --snapshot
+          - "{{ offsitebuddy_e2e_old_snapshot_id }}"
+          - --target
+          - "{{ offsitebuddy_e2e_old_restore }}"
+      changed_when: false
+
+    - name: Read older restored proof file
+      ansible.builtin.slurp:
+        path: >-
+          {{ offsitebuddy_e2e_old_restore }}{{ offsitebuddy_e2e_source }}/proof.txt
+      register: offsitebuddy_e2e_old_restored_proof
+
+    - name: Check second-only file is absent from older restore
+      ansible.builtin.stat:
+        path: >-
+          {{ offsitebuddy_e2e_old_restore }}{{ offsitebuddy_e2e_source }}/second-only.txt
+      register: offsitebuddy_e2e_old_second_only
+
+    - name: Assert older snapshot content
+      ansible.builtin.assert:
+        that:
+          - >-
+            offsitebuddy_e2e_old_restored_proof.content | b64decode ==
+            'offsitebuddy e2e proof\n'
+          - not offsitebuddy_e2e_old_second_only.stat.exists
+
+    - name: Restore only proof file from latest snapshot
+      ansible.builtin.command:
+        argv:
+          - "{{ offsitebuddy_e2e_job_root }}/restore.sh"
+          - --snapshot
+          - latest
+          - --include
+          - "{{ offsitebuddy_e2e_source }}/proof.txt"
+          - --target
+          - "{{ offsitebuddy_e2e_selective_restore }}"
+      changed_when: false
+
+    - name: Read selectively restored proof file
+      ansible.builtin.slurp:
+        path: >-
+          {{ offsitebuddy_e2e_selective_restore }}{{ offsitebuddy_e2e_source }}/proof.txt
+      register: offsitebuddy_e2e_selective_restored_proof
+
+    - name: Check second-only file is absent from selective restore
+      ansible.builtin.stat:
+        path: >-
+          {{ offsitebuddy_e2e_selective_restore }}{{ offsitebuddy_e2e_source }}/second-only.txt
+      register: offsitebuddy_e2e_selective_second_only
+
+    - name: Assert selective restore content
+      ansible.builtin.assert:
+        that:
+          - >-
+            offsitebuddy_e2e_selective_restored_proof.content | b64decode ==
+            'offsitebuddy e2e second proof\n'
+          - not offsitebuddy_e2e_selective_second_only.stat.exists
 
     - name: Restore latest snapshot
       ansible.builtin.command:
@@ -85,9 +203,18 @@
           {{ offsitebuddy_e2e_restore }}{{ offsitebuddy_e2e_source }}/proof.txt
       register: offsitebuddy_e2e_restored_proof
 
+    - name: Read full latest second-only file
+      ansible.builtin.slurp:
+        path: >-
+          {{ offsitebuddy_e2e_restore }}{{ offsitebuddy_e2e_source }}/second-only.txt
+      register: offsitebuddy_e2e_restored_second_only
+
     - name: Assert restored proof file content
       ansible.builtin.assert:
         that:
           - >-
             offsitebuddy_e2e_restored_proof.content | b64decode ==
-            'offsitebuddy e2e proof\n'
+            'offsitebuddy e2e second proof\n'
+          - >-
+            offsitebuddy_e2e_restored_second_only.content | b64decode ==
+            'offsitebuddy e2e second-only proof\n'
