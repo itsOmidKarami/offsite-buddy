@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: $0 --snapshot <id|latest> [--include <path>]... [--target] /restore/target" >&2
+  echo "Usage: $0 --snapshot <id|latest> [--include <path>]... <target>" >&2
   exit 2
 }
 
@@ -14,7 +14,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --snapshot) [[ $# -ge 2 ]] || usage; snapshot="$2"; shift 2 ;;
     --include) [[ $# -ge 2 ]] || usage; includes+=("$2"); shift 2 ;;
-    --target) [[ $# -ge 2 && -z "$target" ]] || usage; target="$2"; shift 2 ;;
     --*) usage ;;
     *) [[ -z "$target" ]] || usage; target="$1"; shift ;;
   esac

@@ -146,7 +146,6 @@
           - "{{ offsitebuddy_e2e_job_root }}/restore.sh"
           - --snapshot
           - "{{ offsitebuddy_e2e_old_snapshot_id }}"
-          - --target
           - "{{ offsitebuddy_e2e_old_restore }}"
       changed_when: false
 
@@ -182,7 +181,6 @@
           - "{{ offsitebuddy_e2e_source }}/proof.txt"
           - --include
           - "{{ offsitebuddy_e2e_source }}/second-only.txt"
-          - --target
           - "{{ offsitebuddy_e2e_selective_restore }}"
       changed_when: false
 

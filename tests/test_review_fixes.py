@@ -742,6 +742,7 @@ def main():
     restore = read("roles/client/templates/restore.sh.j2")
     for snippet in ("--snapshot", "--include", "args=(restore", "--target", "--verbose=2"):
         assert snippet in restore
+    assert "--target)" not in restore, "restore target CLI must remain positional"
     assert re.search(r"\beval\b", restore) is None
 
     e2e = read("tests/e2e-local.yml")
