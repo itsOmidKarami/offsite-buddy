@@ -729,7 +729,12 @@ def main():
         "server compose must render normalized integer ports"
     )
 
-    restore = read("roles/client/templates/restore-latest.sh.j2")
+    restore_latest = read("roles/client/templates/restore-latest.sh.j2")
+    assert "if [[ $# -ne 1 ]]; then" in restore_latest
+    assert 'exec "$job_dir/restore.sh" --snapshot latest "$1"' in restore_latest
+    assert '"$@"' not in restore_latest
+
+    restore = read("roles/client/templates/restore.sh.j2")
     for snippet in (
         "Restore target must be an absolute path",
         "Restore target must not be /",
@@ -739,7 +744,6 @@ def main():
     ):
         assert snippet in restore, "missing restore target guard: %s" % snippet
 
-    restore = read("roles/client/templates/restore.sh.j2")
     for snippet in ("--snapshot", "--include", "args=(restore", "--target", "--verbose=2"):
         assert snippet in restore
     assert "--target)" not in restore, "restore target CLI must remain positional"

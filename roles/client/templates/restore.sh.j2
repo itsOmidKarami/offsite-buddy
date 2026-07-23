@@ -43,19 +43,33 @@ if [[ "$target" == */ ]]; then
   exit 2
 fi
 
-for source in "${sources[@]}"; do
-  if [[ "$target" == "$source" || "$target" == "$source"/* || "$source" == "$target"/* ]]; then
-    echo "Restore target must not overlap backup source $source" >&2
-    exit 2
-  fi
-done
-
 if [[ ! -d "$target" ]]; then
   echo "Restore target must be an existing empty directory" >&2
   exit 2
 fi
 
-if [[ -n "$(find "$target" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+if ! resolved_target="$(realpath -- "$target")"; then
+  echo "Restore target could not be resolved" >&2
+  exit 2
+fi
+
+if [[ "$resolved_target" == "/" ]]; then
+  echo "Restore target must not be /" >&2
+  exit 2
+fi
+
+for source in "${sources[@]}"; do
+  if ! resolved_source="$(realpath -- "$source")"; then
+    echo "Configured backup source could not be resolved" >&2
+    exit 2
+  fi
+  if [[ "$resolved_target" == "$resolved_source" || "$resolved_target" == "$resolved_source"/* || "$resolved_source" == "$resolved_target"/* ]]; then
+    echo "Restore target must not overlap backup source $source" >&2
+    exit 2
+  fi
+done
+
+if [[ -n "$(find "$resolved_target" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
   echo "Restore target must be an existing empty directory" >&2
   exit 2
 fi
@@ -79,9 +93,9 @@ for include in "${includes[@]}"; do
   fi
 done
 
-args=(restore "$snapshot" --target "$target" --verbose=2)
+args=(restore "$snapshot" --target "$resolved_target" --verbose=2)
 for include in "${includes[@]}"; do
   args+=(--include "$include")
 done
 docker compose --project-directory "$job_dir" run --rm \
-  -v "$target:$target:rw" restic "${args[@]}"
+  -v "$resolved_target:$resolved_target:rw" restic "${args[@]}"

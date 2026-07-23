@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $0 /restore/target" >&2
+  exit 2
+fi
+
 job_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# restore.sh retains these guards: Restore target must be an absolute path;
-# Restore target must not be /; Restore target must not end with /;
-# Restore target must not overlap backup source;
-# Restore target must be an existing empty directory.
-exec "$job_dir/restore.sh" --snapshot latest "$@"
+exec "$job_dir/restore.sh" --snapshot latest "$1"
