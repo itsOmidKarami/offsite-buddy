@@ -6,9 +6,26 @@ helper_template="${MAINTENANCE_ENDPOINT_HELPER:-$repo_root/roles/server/template
 test_dir="$(mktemp -d)"
 fake_bin="$test_dir/bin"
 docker_log="$test_dir/docker.log"
+helper_pid=""
+fifo_fd_open=0
 
 cleanup() {
+  local original_status=$?
+  trap - EXIT
+  set +e
+  if [ "$fifo_fd_open" -eq 1 ]; then
+    exec 3>&-
+    fifo_fd_open=0
+  fi
+  if [ -n "$helper_pid" ]; then
+    if kill -0 "$helper_pid" 2>/dev/null; then
+      kill -TERM "$helper_pid" 2>/dev/null
+    fi
+    wait "$helper_pid" 2>/dev/null || true
+    helper_pid=""
+  fi
   rm -rf "$test_dir"
+  exit "$original_status"
 }
 trap cleanup EXIT
 
@@ -30,12 +47,19 @@ command_line() {
   printf '%s' "$last_line"
 }
 
-command_count() {
-  local expected="$1"
+ordinary_restore_count() {
+  local compose_arg
   local count=0
   local line
+  printf -v compose_arg '%q' "$job_dir/compose.yaml"
   while IFS= read -r line; do
-    [ "$line" = "$expected" ] && ((count += 1))
+    case "$line" in
+      *" up -d")
+        case " $line " in
+          *" $compose_arg "*|*"=$compose_arg "*) ((count += 1)) ;;
+        esac
+        ;;
+    esac
   done < "$docker_log"
   printf '%s' "$count"
 }
@@ -108,6 +132,7 @@ render_helper term
 fifo="$test_dir/maintenance-input"
 mkfifo "$fifo"
 exec 3<> "$fifo"
+fifo_fd_open=1
 maintenance_up="$(compose_command "$job_dir/compose.maintenance.yaml" up -d)"
 term_restore="$(compose_command "$job_dir/compose.yaml" up -d)"
 PATH="$fake_bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
@@ -119,10 +144,12 @@ set +e
 wait "$helper_pid"
 term_status=$?
 set -e
+helper_pid=""
 exec 3>&-
+fifo_fd_open=0
 assert_eq "$term_status" 143
 assert_eq "$(command_line)" "$term_restore"
-assert_eq "$(command_count "$term_restore")" 1
+assert_eq "$(ordinary_restore_count)" 1
 
 render_helper restore-failure
 : > "$docker_log"
