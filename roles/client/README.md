@@ -27,6 +27,14 @@ supported defaults. See [Tailnet endpoint guidance](../../docs/tailnet-endpoints
 - `offsitebuddy_start_services`: Start generated services after writing files.
 - `offsitebuddy_cleanup_stale`: Remove generated files for deleted jobs.
 
+## Restores
+
+Each job provides `snapshots.sh`, `restore.sh`, and the compatible
+`restore-latest.sh <target>` wrapper. `restore.sh` requires
+`--snapshot <id|latest>` and accepts repeated `--include` paths. Restore targets
+must be existing empty directories. See [restore testing](../../docs/restore-test.md)
+for concrete snapshot and selective-restore commands.
+
 ## Timers and Checks
 
 A missed `Persistent=true` timer can run after boot. Each backup start is delayed

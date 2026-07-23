@@ -15,6 +15,68 @@
     offsitebuddy_e2e_selective_restore: >-
       {{ offsitebuddy_e2e_base }}/selective-restore
     offsitebuddy_e2e_job_root: "{{ offsitebuddy_e2e_base }}/jobs/local_smoke"
+    offsitebuddy_e2e_invalid_restore_cases:
+      - name: missing snapshot
+        arguments:
+          - "{{ offsitebuddy_e2e_restore }}"
+        stderr_fragment: 'Usage:'
+      - name: invalid snapshot ID
+        arguments:
+          - --snapshot
+          - invalid
+          - "{{ offsitebuddy_e2e_restore }}"
+        stderr_fragment: 'Usage:'
+      - name: glob include
+        arguments:
+          - --snapshot
+          - latest
+          - --include
+          - "{{ offsitebuddy_e2e_source }}/*"
+          - "{{ offsitebuddy_e2e_restore }}"
+        stderr_fragment: >-
+          Restore include must be an absolute configured backup source or
+          descendant without globs or traversal
+      - name: traversal include
+        arguments:
+          - --snapshot
+          - latest
+          - --include
+          - "{{ offsitebuddy_e2e_source }}/../outside"
+          - "{{ offsitebuddy_e2e_restore }}"
+        stderr_fragment: >-
+          Restore include must be an absolute configured backup source or
+          descendant without globs or traversal
+      - name: root include
+        arguments:
+          - --snapshot
+          - latest
+          - --include
+          - /
+          - "{{ offsitebuddy_e2e_restore }}"
+        stderr_fragment: >-
+          Restore include must be an absolute configured backup source or
+          descendant without globs or traversal
+      - name: unrelated absolute include
+        arguments:
+          - --snapshot
+          - latest
+          - --include
+          - /tmp/offsitebuddy-unrelated
+          - "{{ offsitebuddy_e2e_restore }}"
+        stderr_fragment: >-
+          Restore include must be a configured backup source or descendant
+      - name: source-overlapping target
+        arguments:
+          - --snapshot
+          - latest
+          - "{{ offsitebuddy_e2e_source }}"
+        stderr_fragment: 'Restore target must not overlap backup source'
+      - name: nonempty target
+        arguments:
+          - --snapshot
+          - latest
+          - "{{ offsitebuddy_e2e_repo }}"
+        stderr_fragment: 'Restore target must be an existing empty directory'
     offsitebuddy_client_root: "{{ offsitebuddy_e2e_base }}/jobs"
     offsitebuddy_client_owner: "{{ lookup('pipe', 'id -un') }}"
     offsitebuddy_client_group: "{{ lookup('pipe', 'id -gn') }}"
@@ -139,6 +201,26 @@
       ansible.builtin.command:
         cmd: "{{ offsitebuddy_e2e_job_root }}/check.sh"
       changed_when: false
+
+    - name: Reject invalid restore invocations before Docker runs
+      ansible.builtin.command:
+        argv: >-
+          {{ [offsitebuddy_e2e_job_root ~ '/restore.sh'] + item.arguments }}
+      loop: "{{ offsitebuddy_e2e_invalid_restore_cases }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: offsitebuddy_e2e_invalid_restores
+      changed_when: false
+      failed_when: false
+
+    - name: Assert invalid restore invocations are rejected safely
+      ansible.builtin.assert:
+        that:
+          - item.rc == 2
+          - item.stderr is search(item.item.stderr_fragment)
+      loop: "{{ offsitebuddy_e2e_invalid_restores.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
 
     - name: Restore older snapshot
       ansible.builtin.command:
