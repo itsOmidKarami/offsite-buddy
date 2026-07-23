@@ -192,6 +192,11 @@ def main():
     assert "type: bind" in server_compose, "server volumes should use long-form bind mounts"
     maintenance_compose = read("roles/server/templates/compose.maintenance.yaml.j2")
     maintenance_helper = read("roles/server/templates/maintenance-endpoint.sh.j2")
+    maintenance_verify = read("molecule/default/verify.yml")
+    assert (
+        'name: "offsitebuddy-friend-{{ friend.name }}-maintenance"'
+        in maintenance_compose
+    )
     assert "--append-only" not in maintenance_compose
     assert "friend.quota.path" in maintenance_compose
     assert "./htpasswd" in maintenance_compose
@@ -200,6 +205,10 @@ def main():
         assert signal in maintenance_helper
     assert 'compose.yaml" up -d' in maintenance_helper
     assert "exit \"$restore_status\"" in maintenance_helper
+    maintenance_validation = maintenance_verify.split(
+        "- name: Validate maintenance Compose configuration", 1
+    )[1].split("- name: Parse generated Compose files", 1)[0]
+    assert "--project-name" not in maintenance_validation
     assert "maintenance-endpoint.sh" in read("roles/server/tasks/rest_server.yml")
     server_tasks = read("roles/server/tasks/rest_server.yml")
     server_cleanup = read("roles/server/tasks/cleanup.yml")
