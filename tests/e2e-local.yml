@@ -78,6 +78,12 @@
         dest: "{{ offsitebuddy_e2e_source }}/second-only.txt"
         mode: "0644"
 
+    - name: Write third-snapshot-only proof file
+      ansible.builtin.copy:
+        content: "offsitebuddy e2e third-only proof\n"
+        dest: "{{ offsitebuddy_e2e_source }}/third-only.txt"
+        mode: "0644"
+
     - name: Create second snapshot
       ansible.builtin.command:
         cmd: "{{ offsitebuddy_e2e_job_root }}/backup.sh"
@@ -166,6 +172,8 @@
           - latest
           - --include
           - "{{ offsitebuddy_e2e_source }}/proof.txt"
+          - --include
+          - "{{ offsitebuddy_e2e_source }}/second-only.txt"
           - --target
           - "{{ offsitebuddy_e2e_selective_restore }}"
       changed_when: false
@@ -176,11 +184,17 @@
           {{ offsitebuddy_e2e_selective_restore }}{{ offsitebuddy_e2e_source }}/proof.txt
       register: offsitebuddy_e2e_selective_restored_proof
 
-    - name: Check second-only file is absent from selective restore
-      ansible.builtin.stat:
+    - name: Read selectively restored second-only file
+      ansible.builtin.slurp:
         path: >-
           {{ offsitebuddy_e2e_selective_restore }}{{ offsitebuddy_e2e_source }}/second-only.txt
-      register: offsitebuddy_e2e_selective_second_only
+      register: offsitebuddy_e2e_selective_restored_second_only
+
+    - name: Check third-only file is absent from selective restore
+      ansible.builtin.stat:
+        path: >-
+          {{ offsitebuddy_e2e_selective_restore }}{{ offsitebuddy_e2e_source }}/third-only.txt
+      register: offsitebuddy_e2e_selective_third_only
 
     - name: Assert selective restore content
       ansible.builtin.assert:
@@ -188,7 +202,10 @@
           - >-
             offsitebuddy_e2e_selective_restored_proof.content | b64decode ==
             'offsitebuddy e2e second proof\n'
-          - not offsitebuddy_e2e_selective_second_only.stat.exists
+          - >-
+            offsitebuddy_e2e_selective_restored_second_only.content | b64decode ==
+            'offsitebuddy e2e second-only proof\n'
+          - not offsitebuddy_e2e_selective_third_only.stat.exists
 
     - name: Restore latest snapshot
       ansible.builtin.command:
@@ -209,6 +226,12 @@
           {{ offsitebuddy_e2e_restore }}{{ offsitebuddy_e2e_source }}/second-only.txt
       register: offsitebuddy_e2e_restored_second_only
 
+    - name: Read full latest third-only file
+      ansible.builtin.slurp:
+        path: >-
+          {{ offsitebuddy_e2e_restore }}{{ offsitebuddy_e2e_source }}/third-only.txt
+      register: offsitebuddy_e2e_restored_third_only
+
     - name: Assert restored proof file content
       ansible.builtin.assert:
         that:
@@ -218,3 +241,6 @@
           - >-
             offsitebuddy_e2e_restored_second_only.content | b64decode ==
             'offsitebuddy e2e second-only proof\n'
+          - >-
+            offsitebuddy_e2e_restored_third_only.content | b64decode ==
+            'offsitebuddy e2e third-only proof\n'

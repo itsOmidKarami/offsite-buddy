@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -741,7 +742,7 @@ def main():
     restore = read("roles/client/templates/restore.sh.j2")
     for snippet in ("--snapshot", "--include", "args=(restore", "--target", "--verbose=2"):
         assert snippet in restore
-    assert "eval " not in restore
+    assert re.search(r"\beval\b", restore) is None
 
     e2e = read("tests/e2e-local.yml")
     for snippet in (
@@ -754,6 +755,7 @@ def main():
         "restore-latest.sh",
         "proof.txt",
         "second-only.txt",
+        "third-only.txt",
         "offsitebuddy_e2e_snapshot_list",
         "--json",
         "--snapshot",
