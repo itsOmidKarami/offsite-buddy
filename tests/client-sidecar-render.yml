@@ -9,8 +9,21 @@
     offsitebuddy_sidecar_base: >-
       {{ playbook_dir | dirname }}/.ansible/tmp/client-sidecar-render
     offsitebuddy_client_root: "{{ offsitebuddy_sidecar_base }}/jobs"
+    offsitebuddy_sidecar_job_root: >-
+      {{ offsitebuddy_client_root }}/photos_to_bob
     offsitebuddy_client_owner: "{{ lookup('pipe', 'id -un') }}"
     offsitebuddy_client_group: "{{ lookup('pipe', 'id -gn') }}"
+    offsitebuddy_restore_fake_bin: >-
+      {{ offsitebuddy_sidecar_base }}/fake-bin
+    offsitebuddy_restore_alias_cases:
+      - name: traversal alias into configured source
+        target: >-
+          {{ offsitebuddy_sidecar_base
+             }}/alias-parent/../source/empty-target
+        stderr_fragment: 'Restore target must not overlap backup source'
+      - name: symlink alias to root
+        target: "{{ offsitebuddy_sidecar_base }}/root-alias"
+        stderr_fragment: 'Restore target must not be /'
     offsitebuddy_start_services: false
     offsitebuddy_manage_systemd: false
     offsitebuddy_client_jobs:
@@ -78,3 +91,79 @@
           - "'TS_AUTHKEY=test-client-auth-key' in env_text"
           - offsitebuddy_client_sidecar_state.stat.isdir
           - offsitebuddy_client_sidecar_state.stat.mode == '0700'
+
+    - name: Create restore guard test directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ offsitebuddy_restore_fake_bin }}"
+        - "{{ offsitebuddy_sidecar_base }}/alias-parent"
+        - "{{ offsitebuddy_sidecar_base }}/source/empty-target"
+        - "{{ offsitebuddy_sidecar_base }}/wrapper-target"
+
+    - name: Create root alias for restore guard test
+      ansible.builtin.file:
+        src: /
+        dest: "{{ offsitebuddy_sidecar_base }}/root-alias"
+        state: link
+
+    - name: Write fake Docker command for restore guard tests
+      ansible.builtin.copy:
+        content: |
+          #!/usr/bin/env bash
+          exit 99
+        dest: "{{ offsitebuddy_restore_fake_bin }}/docker"
+        mode: "0755"
+
+    - name: Reject aliased restore targets before Docker
+      ansible.builtin.command:
+        argv:
+          - "{{ offsitebuddy_sidecar_job_root }}/restore.sh"
+          - --snapshot
+          - latest
+          - "{{ item.target }}"
+      environment:
+        PATH: >-
+          {{ offsitebuddy_restore_fake_bin }}:{{ lookup('env', 'PATH') }}
+      loop: "{{ offsitebuddy_restore_alias_cases }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: offsitebuddy_restore_alias_results
+      changed_when: false
+      failed_when: false
+
+    - name: Reject restore-latest option override before Docker
+      ansible.builtin.command:
+        argv:
+          - "{{ offsitebuddy_sidecar_job_root }}/restore-latest.sh"
+          - --snapshot
+          - deadbeef
+          - "{{ offsitebuddy_sidecar_base }}/wrapper-target"
+      environment:
+        PATH: >-
+          {{ offsitebuddy_restore_fake_bin }}:{{ lookup('env', 'PATH') }}
+      register: offsitebuddy_restore_latest_override
+      changed_when: false
+      failed_when: false
+
+    - name: Assert unsafe restore invocations are rejected before Docker
+      ansible.builtin.assert:
+        that:
+          - >-
+            offsitebuddy_restore_alias_results.results
+            | map(attribute='rc') | list == [2, 2]
+          - >-
+            offsitebuddy_restore_alias_results.results[0].stderr is
+            search(offsitebuddy_restore_alias_cases[0].stderr_fragment)
+          - >-
+            offsitebuddy_restore_alias_results.results[1].stderr is
+            search(offsitebuddy_restore_alias_cases[1].stderr_fragment)
+          - offsitebuddy_restore_latest_override.rc == 2
+          - offsitebuddy_restore_latest_override.stderr is search('Usage:')
+        fail_msg: >-
+          Fake Docker exit 99 must not be reached; alias rc values were
+          {{ offsitebuddy_restore_alias_results.results
+             | map(attribute='rc') | list }} and wrapper rc was
+          {{ offsitebuddy_restore_latest_override.rc }}.

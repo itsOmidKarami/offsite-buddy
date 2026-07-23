@@ -108,6 +108,7 @@
           'backup.sh',
           'init.sh',
           'check.sh',
+          'restore.sh',
           'restore-latest.sh',
           'snapshots.sh',
           'stats.sh'

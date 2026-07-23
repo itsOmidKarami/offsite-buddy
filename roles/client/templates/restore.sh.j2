@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: $0 --snapshot <id|latest> [--include <path>]... <target>" >&2
+  exit 2
+}
+
+snapshot=""
+target=""
+includes=()
+job_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --snapshot) [[ $# -ge 2 ]] || usage; snapshot="$2"; shift 2 ;;
+    --include) [[ $# -ge 2 ]] || usage; includes+=("$2"); shift 2 ;;
+    --*) usage ;;
+    *) [[ -z "$target" ]] || usage; target="$1"; shift ;;
+  esac
+done
+
+[[ -n "$snapshot" && -n "$target" ]] || usage
+[[ "$snapshot" == latest || "$snapshot" =~ ^[0-9a-f]{8,64}$ ]] || usage
+
+sources=(
+{% for path in job.backup_paths %}
+  {{ path | quote }}
+{% endfor %}
+)
+
+if [[ "$target" != /* ]]; then
+  echo "Restore target must be an absolute path" >&2
+  exit 2
+fi
+
+if [[ "$target" == "/" ]]; then
+  echo "Restore target must not be /" >&2
+  exit 2
+fi
+
+if [[ "$target" == */ ]]; then
+  echo "Restore target must not end with /" >&2
+  exit 2
+fi
+
+if [[ ! -d "$target" ]]; then
+  echo "Restore target must be an existing empty directory" >&2
+  exit 2
+fi
+
+if ! resolved_target="$(realpath -- "$target")"; then
+  echo "Restore target could not be resolved" >&2
+  exit 2
+fi
+
+if [[ "$resolved_target" == "/" ]]; then
+  echo "Restore target must not be /" >&2
+  exit 2
+fi
+
+for source in "${sources[@]}"; do
+  if ! resolved_source="$(realpath -- "$source")"; then
+    echo "Configured backup source could not be resolved" >&2
+    exit 2
+  fi
+  if [[ "$resolved_target" == "$resolved_source" || "$resolved_target" == "$resolved_source"/* || "$resolved_source" == "$resolved_target"/* ]]; then
+    echo "Restore target must not overlap backup source $source" >&2
+    exit 2
+  fi
+done
+
+if [[ -n "$(find "$resolved_target" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+  echo "Restore target must be an existing empty directory" >&2
+  exit 2
+fi
+
+for include in "${includes[@]}"; do
+  if [[ "$include" != /* || "$include" == "/" || "$include" == *[\*\?\[]* || "$include" =~ (^|/)\.\.(/|$) ]]; then
+    echo "Restore include must be an absolute configured backup source or descendant without globs or traversal" >&2
+    exit 2
+  fi
+
+  include_allowed=false
+  for source in "${sources[@]}"; do
+    if [[ "$include" == "$source" || "$include" == "$source"/* ]]; then
+      include_allowed=true
+      break
+    fi
+  done
+  if [[ "$include_allowed" != true ]]; then
+    echo "Restore include must be a configured backup source or descendant" >&2
+    exit 2
+  fi
+done
+
+args=(restore "$snapshot" --target "$resolved_target" --verbose=2)
+for include in "${includes[@]}"; do
+  args+=(--include "$include")
+done
+docker compose --project-directory "$job_dir" run --rm \
+  -v "$resolved_target:$resolved_target:rw" restic "${args[@]}"

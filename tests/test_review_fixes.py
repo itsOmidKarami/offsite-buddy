@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -526,6 +527,29 @@ def main():
         "TS_USERSPACE",
     ):
         assert snippet in verify, "missing Molecule artifact check: %s" % snippet
+    generated_files = verify.split(
+        "- name: Read per-entry generated files", 1
+    )[1].split("- name: Index generated file content", 1)[0]
+    client_outputs = verify.split(
+        "- name: Stat client job outputs", 1
+    )[1].split("- name: Stat secret files", 1)[0]
+    helper_syntax = verify.split(
+        "- name: Verify helper script syntax", 1
+    )[1].split("- name: Normalize rendered server Compose files", 1)[0]
+    for name, job in (
+        ("photos", "photos_to_bob"),
+        ("documents", "documents_to_alice"),
+    ):
+        restore_path = "/etc/offsitebuddy/jobs/%s/restore.sh" % job
+        wrapper_path = "/etc/offsitebuddy/jobs/%s/restore-latest.sh" % job
+        assert "name: %s_restore\n          path: %s" % (
+            name,
+            restore_path,
+        ) in generated_files
+        assert restore_path in client_outputs
+        assert wrapper_path in client_outputs
+    for helper in ("'restore.sh'", "'restore-latest.sh'"):
+        assert helper in helper_syntax
     client_tasks = read("roles/client/tasks/restic.yml")
     client_task_defs = {
         task["name"]: task for task in yaml.safe_load(client_tasks)
@@ -728,7 +752,12 @@ def main():
         "server compose must render normalized integer ports"
     )
 
-    restore = read("roles/client/templates/restore-latest.sh.j2")
+    restore_latest = read("roles/client/templates/restore-latest.sh.j2")
+    assert "if [[ $# -ne 1 ]]; then" in restore_latest
+    assert 'exec "$job_dir/restore.sh" --snapshot latest "$1"' in restore_latest
+    assert '"$@"' not in restore_latest
+
+    restore = read("roles/client/templates/restore.sh.j2")
     for snippet in (
         "Restore target must be an absolute path",
         "Restore target must not be /",
@@ -738,6 +767,11 @@ def main():
     ):
         assert snippet in restore, "missing restore target guard: %s" % snippet
 
+    for snippet in ("--snapshot", "--include", "args=(restore", "--target", "--verbose=2"):
+        assert snippet in restore
+    assert "--target)" not in restore, "restore target CLI must remain positional"
+    assert re.search(r"\beval\b", restore) is None
+
     e2e = read("tests/e2e-local.yml")
     for snippet in (
         "ansible_python_interpreter",
@@ -745,8 +779,15 @@ def main():
         "run_initial_backup: true",
         "snapshots.sh",
         "check.sh",
+        "restore.sh",
         "restore-latest.sh",
         "proof.txt",
+        "second-only.txt",
+        "third-only.txt",
+        "offsitebuddy_e2e_snapshot_list",
+        "--json",
+        "--snapshot",
+        "--include",
     ):
         assert snippet in e2e, "missing e2e backup/restore check: %s" % snippet
 
