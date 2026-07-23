@@ -12,7 +12,8 @@
     offsitebuddy_e2e_repo: "{{ offsitebuddy_e2e_base }}/repo"
     offsitebuddy_e2e_restore: "{{ offsitebuddy_e2e_base }}/restore"
     offsitebuddy_e2e_old_restore: "{{ offsitebuddy_e2e_base }}/old-restore"
-    offsitebuddy_e2e_selective_restore: "{{ offsitebuddy_e2e_base }}/selective-restore"
+    offsitebuddy_e2e_selective_restore: >-
+      {{ offsitebuddy_e2e_base }}/selective-restore
     offsitebuddy_e2e_job_root: "{{ offsitebuddy_e2e_base }}/jobs/local_smoke"
     offsitebuddy_client_root: "{{ offsitebuddy_e2e_base }}/jobs"
     offsitebuddy_client_owner: "{{ lookup('pipe', 'id -un') }}"
@@ -107,7 +108,8 @@
     - name: Sort e2e snapshots by time
       ansible.builtin.set_fact:
         offsitebuddy_e2e_snapshots: >-
-          {{ offsitebuddy_e2e_snapshot_list.stdout | from_json | sort(attribute='time') }}
+          {{ offsitebuddy_e2e_snapshot_list.stdout | from_json
+             | sort(attribute='time') }}
 
     - name: Require two e2e snapshots
       ansible.builtin.assert:
@@ -116,13 +118,17 @@
 
     - name: Capture older and latest snapshot IDs
       ansible.builtin.set_fact:
-        offsitebuddy_e2e_old_snapshot_id: "{{ (offsitebuddy_e2e_snapshots | first).id }}"
-        offsitebuddy_e2e_latest_snapshot_id: "{{ (offsitebuddy_e2e_snapshots | last).id }}"
+        offsitebuddy_e2e_old_snapshot_id: >-
+          {{ (offsitebuddy_e2e_snapshots | first).id }}
+        offsitebuddy_e2e_latest_snapshot_id: >-
+          {{ (offsitebuddy_e2e_snapshots | last).id }}
 
     - name: Require distinct older and latest snapshot IDs
       ansible.builtin.assert:
         that:
-          - offsitebuddy_e2e_old_snapshot_id != offsitebuddy_e2e_latest_snapshot_id
+          - >-
+            offsitebuddy_e2e_old_snapshot_id !=
+            offsitebuddy_e2e_latest_snapshot_id
 
     - name: List snapshots
       ansible.builtin.command:
@@ -147,13 +153,15 @@
     - name: Read older restored proof file
       ansible.builtin.slurp:
         path: >-
-          {{ offsitebuddy_e2e_old_restore }}{{ offsitebuddy_e2e_source }}/proof.txt
+          {{ offsitebuddy_e2e_old_restore
+             }}{{ offsitebuddy_e2e_source }}/proof.txt
       register: offsitebuddy_e2e_old_restored_proof
 
     - name: Check second-only file is absent from older restore
       ansible.builtin.stat:
         path: >-
-          {{ offsitebuddy_e2e_old_restore }}{{ offsitebuddy_e2e_source }}/second-only.txt
+          {{ offsitebuddy_e2e_old_restore
+             }}{{ offsitebuddy_e2e_source }}/second-only.txt
       register: offsitebuddy_e2e_old_second_only
 
     - name: Assert older snapshot content
@@ -181,19 +189,22 @@
     - name: Read selectively restored proof file
       ansible.builtin.slurp:
         path: >-
-          {{ offsitebuddy_e2e_selective_restore }}{{ offsitebuddy_e2e_source }}/proof.txt
+          {{ offsitebuddy_e2e_selective_restore
+             }}{{ offsitebuddy_e2e_source }}/proof.txt
       register: offsitebuddy_e2e_selective_restored_proof
 
     - name: Read selectively restored second-only file
       ansible.builtin.slurp:
         path: >-
-          {{ offsitebuddy_e2e_selective_restore }}{{ offsitebuddy_e2e_source }}/second-only.txt
+          {{ offsitebuddy_e2e_selective_restore
+             }}{{ offsitebuddy_e2e_source }}/second-only.txt
       register: offsitebuddy_e2e_selective_restored_second_only
 
     - name: Check third-only file is absent from selective restore
       ansible.builtin.stat:
         path: >-
-          {{ offsitebuddy_e2e_selective_restore }}{{ offsitebuddy_e2e_source }}/third-only.txt
+          {{ offsitebuddy_e2e_selective_restore
+             }}{{ offsitebuddy_e2e_source }}/third-only.txt
       register: offsitebuddy_e2e_selective_third_only
 
     - name: Assert selective restore content
@@ -203,7 +214,8 @@
             offsitebuddy_e2e_selective_restored_proof.content | b64decode ==
             'offsitebuddy e2e second proof\n'
           - >-
-            offsitebuddy_e2e_selective_restored_second_only.content | b64decode ==
+            offsitebuddy_e2e_selective_restored_second_only.content |
+            b64decode ==
             'offsitebuddy e2e second-only proof\n'
           - not offsitebuddy_e2e_selective_third_only.stat.exists
 
@@ -223,13 +235,15 @@
     - name: Read full latest second-only file
       ansible.builtin.slurp:
         path: >-
-          {{ offsitebuddy_e2e_restore }}{{ offsitebuddy_e2e_source }}/second-only.txt
+          {{ offsitebuddy_e2e_restore
+             }}{{ offsitebuddy_e2e_source }}/second-only.txt
       register: offsitebuddy_e2e_restored_second_only
 
     - name: Read full latest third-only file
       ansible.builtin.slurp:
         path: >-
-          {{ offsitebuddy_e2e_restore }}{{ offsitebuddy_e2e_source }}/third-only.txt
+          {{ offsitebuddy_e2e_restore
+             }}{{ offsitebuddy_e2e_source }}/third-only.txt
       register: offsitebuddy_e2e_restored_third_only
 
     - name: Assert restored proof file content
