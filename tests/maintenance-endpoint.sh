@@ -128,6 +128,18 @@ fi
 EOF
 chmod +x "$fake_bin/docker"
 
+cat > "$fake_bin/rm" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "${FAKE_RM_FAIL:-}" = 1 ]; then
+  exit 66
+fi
+
+exec /bin/rm "$@"
+EOF
+chmod +x "$fake_bin/rm"
+
 render_helper normal
 : > "$docker_log"
 set +e
@@ -171,6 +183,8 @@ printf '\n' | PATH="$fake_bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
 restore_failure_status=$?
 set -e
 assert_eq "$restore_failure_status" 42
+assert_file_exists "$job_dir/compose.maintenance.yaml"
+assert_file_exists "$job_dir/maintenance-endpoint.sh"
 
 render_helper maintenance-down-failure
 : > "$docker_log"
@@ -182,6 +196,20 @@ set -e
 assert_eq "$maintenance_down_status" 55
 maintenance_down_restore="$(compose_command "$job_dir/compose.yaml" up -d)"
 assert_eq "$(command_line)" "$maintenance_down_restore"
+assert_eq "$(ordinary_restore_count)" 1
+assert_file_exists "$job_dir/compose.maintenance.yaml"
+assert_file_exists "$job_dir/maintenance-endpoint.sh"
+
+render_helper artifact-removal-failure
+: > "$docker_log"
+set +e
+printf '\n' | PATH="$fake_bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
+  FAKE_RM_FAIL=1 "$job_dir/maintenance-endpoint.sh" >/dev/null
+artifact_removal_status=$?
+set -e
+assert_eq "$artifact_removal_status" 66
+artifact_removal_restore="$(compose_command "$job_dir/compose.yaml" up -d)"
+assert_eq "$(command_line)" "$artifact_removal_restore"
 assert_eq "$(ordinary_restore_count)" 1
 assert_file_exists "$job_dir/compose.maintenance.yaml"
 assert_file_exists "$job_dir/maintenance-endpoint.sh"

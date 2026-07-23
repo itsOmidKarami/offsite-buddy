@@ -562,6 +562,9 @@
           - unit_stats.results | map(attribute='stat.exists') | min
           - >-
             maintenance_artifact.name ==
+            'offsitebuddy-maintenance-friend-alice'
+          - >-
+            maintenance_artifact.name !=
             'offsitebuddy-friend-alice-maintenance'
           - >-
             bob_maintenance_file_stats.results | map(attribute='stat.exists')

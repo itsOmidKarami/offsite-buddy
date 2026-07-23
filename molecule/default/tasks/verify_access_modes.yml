@@ -72,6 +72,11 @@
       - alice/.env
       - bob/compose.yaml
       - bob/.env
+    access_mode_maintenance_paths:
+      - alice/compose.maintenance.yaml
+      - alice/maintenance-endpoint.sh
+      - bob/compose.maintenance.yaml
+      - bob/maintenance-endpoint.sh
   no_log: true
 
 - name: Define two-mode access baseline
@@ -114,6 +119,13 @@
   loop: "{{ access_mode_credential_paths }}"
   register: access_mode_credentials_before
 
+- name: Capture access-mode maintenance files before transitions
+  ansible.builtin.stat:
+    path: "/srv/offsitebuddy/friends/{{ item }}"
+    checksum_algorithm: sha256
+  loop: "{{ access_mode_maintenance_paths }}"
+  register: access_mode_maintenance_before
+
 - name: Exercise both access-mode transition directions
   block:
     - name: Apply transitioned access modes
@@ -129,6 +141,13 @@
         checksum_algorithm: sha256
       loop: "{{ access_mode_artifact_paths }}"
       register: access_mode_files_after
+
+    - name: Capture access-mode maintenance files after transitions
+      ansible.builtin.stat:
+        path: "/srv/offsitebuddy/friends/{{ item }}"
+        checksum_algorithm: sha256
+      loop: "{{ access_mode_maintenance_paths }}"
+      register: access_mode_maintenance_after
 
     - name: Apply transitioned access modes again
       ansible.builtin.include_role:
@@ -150,6 +169,13 @@
         checksum_algorithm: sha256
       loop: "{{ access_mode_artifact_paths }}"
       register: access_mode_files_after_repeat
+
+    - name: Capture access-mode maintenance files after repeat
+      ansible.builtin.stat:
+        path: "/srv/offsitebuddy/friends/{{ item }}"
+        checksum_algorithm: sha256
+      loop: "{{ access_mode_maintenance_paths }}"
+      register: access_mode_maintenance_after_repeat
 
     - name: Read transitioned access-mode Compose files
       ansible.builtin.slurp:
@@ -226,6 +252,18 @@
               access_mode_files_after.results
               | map(attribute='stat.checksum') | list
             )
+          - >-
+            access_mode_maintenance_after.results
+            | map(attribute='stat.exists') | list == [false, false, true, true]
+          - >-
+            access_mode_maintenance_after_repeat.results
+            | map(attribute='stat.exists') | list == [false, false, true, true]
+          - >-
+            access_mode_maintenance_after_repeat.results[2].stat.checksum
+            == access_mode_maintenance_after.results[2].stat.checksum
+          - >-
+            access_mode_maintenance_after_repeat.results[3].stat.checksum
+            == access_mode_maintenance_after.results[3].stat.checksum
   always:
     - name: Restore initial access modes after transition verification
       ansible.builtin.include_role:
@@ -276,6 +314,13 @@
         checksum_algorithm: sha256
       loop: "{{ access_mode_stable_state_paths }}"
       register: restored_access_mode_files
+
+    - name: Capture restored access-mode maintenance files
+      ansible.builtin.stat:
+        path: "/srv/offsitebuddy/friends/{{ item }}"
+        checksum_algorithm: sha256
+      loop: "{{ access_mode_maintenance_paths }}"
+      register: restored_access_mode_maintenance_files
 
     - name: Verify restored REST credentials remain isolated
       ansible.builtin.command:
@@ -352,3 +397,12 @@
           - >-
             restored_access_mode_auth_checks.results
             | map(attribute='rc') | list == [0, 0]
+          - >-
+            restored_access_mode_maintenance_files.results
+            | map(attribute='stat.exists') | list == [true, true, false, false]
+          - >-
+            restored_access_mode_maintenance_files.results[0].stat.checksum
+            == access_mode_maintenance_before.results[0].stat.checksum
+          - >-
+            restored_access_mode_maintenance_files.results[1].stat.checksum
+            == access_mode_maintenance_before.results[1].stat.checksum

@@ -81,7 +81,7 @@ running ordinary rest-server `OPTIONS` includes `--append-only`:
 
 ```sh
 if sudo docker ps -aq \
-  --filter "label=com.docker.compose.project=offsitebuddy-friend-alice-maintenance" | grep -q .; then
+  --filter "label=com.docker.compose.project=offsitebuddy-maintenance-friend-alice" | grep -q .; then
   echo "maintenance project is still present" >&2
   exit 1
 fi
@@ -126,7 +126,7 @@ maintenance project, then start the ordinary project:
 
 ```sh
 sudo docker ps -a \
-  --filter "label=com.docker.compose.project=offsitebuddy-friend-alice-maintenance"
+  --filter "label=com.docker.compose.project=offsitebuddy-maintenance-friend-alice"
 sudo docker ps -a \
   --filter "label=com.docker.compose.project=offsitebuddy-friend-alice"
 sudo docker compose --project-directory /srv/offsitebuddy/friends/alice \

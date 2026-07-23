@@ -176,7 +176,7 @@ def main():
         "while sudo systemctl is-active --quiet offsitebuddy-check-photos_to_alice.service",
         "preflight_restore=\"$(sudo mktemp -d /tmp/offsitebuddy-restore-photos-to-alice-preflight.xxxxxx)\"",
         "post_prune_restore=\"$(sudo mktemp -d /tmp/offsitebuddy-restore-photos-to-alice-post-prune.xxxxxx)\"",
-        "label=com.docker.compose.project=offsitebuddy-friend-alice-maintenance",
+        "label=com.docker.compose.project=offsitebuddy-maintenance-friend-alice",
         "grep '^options=.*--append-only'",
     ):
         assert command in docs
@@ -185,7 +185,7 @@ def main():
     post_close_docs = docs.split("## restore append-only operation", 1)[1].split(
         "## failure handling", 1
     )[0]
-    assert post_close_docs.index("offsitebuddy-friend-alice-maintenance") < (
+    assert post_close_docs.index("offsitebuddy-maintenance-friend-alice") < (
         post_close_docs.index('label=com.docker.compose.project=offsitebuddy-friend-alice"')
     ) < post_close_docs.index("options=.*--append-only") < post_close_docs.index(
         "/etc/offsitebuddy/jobs/photos_to_alice/check.sh"
@@ -229,9 +229,13 @@ def main():
     maintenance_helper = read("roles/server/templates/maintenance-endpoint.sh.j2")
     maintenance_verify = read("molecule/default/verify.yml")
     assert (
-        'name: "offsitebuddy-friend-{{ friend.name }}-maintenance"'
+        'name: "offsitebuddy-maintenance-friend-{{ friend.name }}"'
         in maintenance_compose
     )
+    assert 'name: "offsitebuddy-friend-{{ friend.name }}-maintenance"' not in maintenance_compose
+    ordinary_collision_project = "offsitebuddy-friend-alice-maintenance"
+    maintenance_alice_project = "offsitebuddy-maintenance-friend-alice"
+    assert ordinary_collision_project != maintenance_alice_project
     assert "--append-only" not in maintenance_compose
     assert "friend.quota.path" in maintenance_compose
     assert "./htpasswd" in maintenance_compose
@@ -240,6 +244,8 @@ def main():
         assert signal in maintenance_helper
     assert 'compose.yaml" up -d' in maintenance_helper
     assert "exit \"$restore_status\"" in maintenance_helper
+    assert "artifact_status=$?" in maintenance_helper
+    assert "exit \"$artifact_status\"" in maintenance_helper
     maintenance_validation = maintenance_verify.split(
         "- name: Validate maintenance Compose configuration", 1
     )[1].split("- name: Parse generated Compose files", 1)[0]
