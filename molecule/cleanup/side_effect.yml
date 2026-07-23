@@ -25,6 +25,8 @@
       /tmp/offsitebuddy-cleanup-side-effect-current-client-source
     server_shadow_root: >-
       /srv/offsitebuddy-cleanup-side-effect/server-shadow
+    server_maintenance_shadow_root: >-
+      /srv/offsitebuddy-cleanup-side-effect/server-maintenance-shadow
     server_shadow_current: >-
       cleanup-shadow-server-current-{{ ansible_facts['hostname'] }}
     server_shadow_legacy: "offsitebuddy-friend-{{ server_shadow_current }}"
@@ -387,7 +389,7 @@
       vars:
         server_maintenance_shadow_path: >-
           {{
-            server_shadow_root ~ '/friends/' ~
+            server_maintenance_shadow_root ~ '/friends/' ~
             server_maintenance_shadow_legacy
           }}
       block:
@@ -450,7 +452,7 @@
                 name: server
                 tasks_from: main.yml
               vars:
-                offsitebuddy_server_root: "{{ server_shadow_root }}"
+                offsitebuddy_server_root: "{{ server_maintenance_shadow_root }}"
                 offsitebuddy_cleanup_stale: false
                 offsitebuddy_start_services: true
                 offsitebuddy_friends:
@@ -491,7 +493,10 @@
             get_checksum: true
           loop:
             - >-
-              {{ server_shadow_root }}/friends/{{ server_shadow_current }}
+              {{
+                server_maintenance_shadow_root ~ '/friends/' ~
+                server_shadow_current
+              }}
             - >-
               {{ server_maintenance_shadow_path }}/.offsitebuddy-managed
             - >-

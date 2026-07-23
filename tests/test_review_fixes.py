@@ -432,6 +432,12 @@ def main():
     assert "offsitebuddy-maintenance-friend-{{ server_shadow_current }}" in (
         cleanup_side_effect
     )
+    assert "server_maintenance_shadow_root: >-" in cleanup_side_effect
+    assert "server_maintenance_shadow_root ~ '/friends/' ~" in cleanup_side_effect
+    assert (
+        'offsitebuddy_server_root: "{{ server_maintenance_shadow_root }}"'
+        in cleanup_side_effect
+    )
 
     cleanup_molecule = read("molecule/cleanup/molecule.yml")
     cleanup_playbook = read("molecule/cleanup/cleanup.yml")
