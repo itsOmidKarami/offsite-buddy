@@ -27,6 +27,14 @@ supported defaults. See [Tailnet endpoint guidance](../../docs/tailnet-endpoints
 - `offsitebuddy_start_services`: Start generated services after writing files.
 - `offsitebuddy_cleanup_stale`: Remove generated files for deleted jobs.
 
+## Timers and Checks
+
+A missed `Persistent=true` timer can run after boot. Each backup start is delayed
+by up to `offsitebuddy_backup_randomized_delay_sec` through
+`RandomizedDelaySec`. Disabling an optional check leaves its backup timer
+enabled. Set `check.read_data: true` only when needed: it reads repository data
+and may be I/O-intensive.
+
 ## Stale Cleanup
 
 Stale cleanup is opt-in (`offsitebuddy_cleanup_stale: true`) and requires runtime

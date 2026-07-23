@@ -1,0 +1,159 @@
+---
+- name: Verify systemd timer lifecycle
+  hosts: all
+  become: true
+  tasks:
+    - name: Check retained timers are enabled
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-enabled
+          - "{{ item }}"
+      loop:
+        - offsitebuddy-backup-daily_job.timer
+        - offsitebuddy-backup-custom_job.timer
+        - offsitebuddy-check-daily_job.timer
+      register: retained_timer_enabled
+      changed_when: false
+
+    - name: Check retained timers are active
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - "{{ item }}"
+      loop:
+        - offsitebuddy-backup-daily_job.timer
+        - offsitebuddy-backup-custom_job.timer
+        - offsitebuddy-check-daily_job.timer
+      register: retained_timer_active
+      changed_when: false
+
+    - name: Check removed custom check timer runtime state
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - "{{ item }}"
+          - offsitebuddy-check-custom_job.timer
+      loop:
+        - is-enabled
+        - is-active
+      register: removed_timer_runtime
+      changed_when: false
+      failed_when: false
+
+    - name: Stat removed custom check unit files
+      ansible.builtin.stat:
+        path: "/etc/systemd/system/offsitebuddy-check-custom_job.{{ item }}"
+      loop:
+        - service
+        - timer
+      register: removed_timer_files
+
+    - name: Assert timer lifecycle runtime state
+      ansible.builtin.assert:
+        that:
+          - >-
+            retained_timer_enabled.results | map(attribute='rc') | list
+            == [0, 0, 0]
+          - >-
+            retained_timer_active.results | map(attribute='rc') | list
+            == [0, 0, 0]
+          - removed_timer_runtime.results | map(attribute='rc') | min != 0
+          - >-
+            not (removed_timer_files.results | map(attribute='stat.exists')
+            | max)
+
+    - name: Read retained systemd unit files
+      ansible.builtin.slurp:
+        path: "{{ item.path }}"
+      loop:
+        - name: daily_backup_service
+          path: /etc/systemd/system/offsitebuddy-backup-daily_job.service
+        - name: daily_backup_timer
+          path: /etc/systemd/system/offsitebuddy-backup-daily_job.timer
+        - name: custom_backup_service
+          path: /etc/systemd/system/offsitebuddy-backup-custom_job.service
+        - name: custom_backup_timer
+          path: /etc/systemd/system/offsitebuddy-backup-custom_job.timer
+        - name: daily_check_service
+          path: /etc/systemd/system/offsitebuddy-check-daily_job.service
+        - name: daily_check_timer
+          path: /etc/systemd/system/offsitebuddy-check-daily_job.timer
+      loop_control:
+        label: "{{ item.name }}"
+      register: retained_units
+      no_log: true
+
+    - name: Index retained systemd unit content
+      ansible.builtin.set_fact:
+        retained_unit_content: >-
+          {{ retained_unit_content | default({}) |
+             combine({item.item.name: item.content | b64decode}) }}
+      loop: "{{ retained_units.results }}"
+      no_log: true
+
+    - name: Verify retained systemd unit syntax
+      ansible.builtin.command:
+        argv:
+          - systemd-analyze
+          - verify
+          - "{{ item.path }}"
+      loop:
+        - path: /etc/systemd/system/offsitebuddy-backup-daily_job.service
+        - path: /etc/systemd/system/offsitebuddy-backup-daily_job.timer
+        - path: >-
+            /etc/systemd/system/offsitebuddy-backup-custom_job.service
+        - path: >-
+            /etc/systemd/system/offsitebuddy-backup-custom_job.timer
+        - path: /etc/systemd/system/offsitebuddy-check-daily_job.service
+        - path: /etc/systemd/system/offsitebuddy-check-daily_job.timer
+      changed_when: false
+
+    - name: Parse configured check schedules
+      ansible.builtin.command:
+        argv:
+          - systemd-analyze
+          - calendar
+          - "{{ item }}"
+      loop:
+        - weekly
+        - "Sun *-*-* 05:00:00"
+      changed_when: false
+
+    - name: Assert rendered timer schedules and properties
+      ansible.builtin.assert:
+        that:
+          - >-
+            'OnCalendar=*-*-* 03:30:00' in
+            retained_unit_content.daily_backup_timer
+          - >-
+            'OnCalendar=*-*-* 04:15:00' in
+            retained_unit_content.custom_backup_timer
+          - >-
+            'RandomizedDelaySec=1800' in
+            retained_unit_content.daily_backup_timer
+          - "'Persistent=true' in retained_unit_content.daily_backup_timer"
+          - "'OnCalendar=weekly' in retained_unit_content.daily_check_timer"
+      no_log: true
+
+    - name: Assert retained units contain no secret markers
+      ansible.builtin.assert:
+        that:
+          - "'rest:http' not in item.value"
+          - "'RESTIC_PASSWORD' not in item.value"
+          - "'TS_AUTHKEY' not in item.value"
+          - "'auth_key' not in item.value"
+          - "'heartbeat' not in item.value"
+          - >-
+            'rest:http://synthetic:repo-sentinel@unit.invalid/'
+            not in item.value
+          - "'systemd-restic-password-sentinel' not in item.value"
+          - "'systemd-tailscale-auth-sentinel' not in item.value"
+          - >-
+            'https://unit-leak.invalid/systemd-heartbeat-sentinel'
+            not in item.value
+      loop: "{{ retained_unit_content | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      no_log: true

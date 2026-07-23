@@ -28,3 +28,9 @@
 12. Run a restore test.
 
 OffsiteBuddy does not make an untested backup safe. Restore from the repo before trusting it.
+
+## Timer behavior
+
+A missed `Persistent=true` timer can run after boot. Backup starts are delayed by
+up to `offsitebuddy_backup_randomized_delay_sec` through `RandomizedDelaySec`.
+Disabling an optional check leaves its backup timer enabled. `check.read_data: true` reads repository data and may be I/O-intensive.

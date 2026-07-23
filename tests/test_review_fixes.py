@@ -649,6 +649,17 @@ def main():
         "docker compose --project-name <job-name> --file "
         "<managed-compose-path>/compose.yaml down"
     ) in client_readme
+    timer_guidance = " ".join(client_readme.split())
+    assert "A missed `Persistent=true` timer can run after boot." in timer_guidance
+    assert (
+        "Each backup start is delayed by up to "
+        "`offsitebuddy_backup_randomized_delay_sec` through `RandomizedDelaySec`."
+    ) in timer_guidance
+    assert "Disabling an optional check leaves its backup timer enabled." in timer_guidance
+    assert (
+        "Set `check.read_data: true` only when needed: it reads repository data "
+        "and may be I/O-intensive."
+    ) in timer_guidance
 
     default_molecule = read("molecule/default/molecule.yml")
     assert "DOCKER_SOCKET_VOLUME" in default_molecule
