@@ -377,12 +377,6 @@
           changed_when: false
           failed_when: false
 
-        - name: Remove quota-full workspace
-          ansible.builtin.file:
-            path: "{{ quota_base }}"
-            state: absent
-          failed_when: false
-
         - name: Confirm failure heartbeat process stopped
           ansible.builtin.shell:
             cmd: |
@@ -415,6 +409,12 @@
           become: true
           register: quota_loop_probe
           changed_when: false
+          failed_when: false
+
+        - name: Remove quota-full workspace
+          ansible.builtin.file:
+            path: "{{ quota_base }}"
+            state: absent
           failed_when: false
 
         - name: Confirm quota-full workspace is absent
