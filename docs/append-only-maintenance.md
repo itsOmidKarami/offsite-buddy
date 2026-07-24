@@ -112,15 +112,16 @@ target, inspect it after success, and clean up only the recorded target:
 post_prune_restore="$(sudo mktemp -d /tmp/offsitebuddy-restore-photos-to-alice-post-prune.XXXXXX)"
 sudo chmod 700 "$post_prune_restore"
 sudo /etc/offsitebuddy/jobs/photos_to_alice/check.sh
+sudo /etc/offsitebuddy/jobs/photos_to_alice/backup.sh
 sudo /etc/offsitebuddy/jobs/photos_to_alice/restore-latest.sh "$post_prune_restore"
 # Inspect "$post_prune_restore", then remove only the recorded restore targets.
 sudo rm -rf -- "$preflight_restore" "$post_prune_restore"
 ```
 
 After all shared post-prune gates pass—the runtime, `restic check`, and
-representative `restore-latest.sh`—repeat these resume commands on the
-original host for every matching timer that was previously enabled. Previously
-disabled timers must remain disabled:
+successful backup, and representative `restore-latest.sh`—repeat these resume
+commands on the original host for every matching timer that was previously
+enabled. Previously disabled timers must remain disabled:
 
 ```sh
 sudo systemctl enable --now offsitebuddy-backup-photos_to_alice.timer
@@ -147,7 +148,7 @@ sudo docker compose --project-name offsitebuddy-friend-alice --project-directory
 ```
 
 Repeat the maintenance-absence, ordinary-running, runtime `OPTIONS`,
-`check.sh`, and fresh post-prune `restore-latest.sh` gates above before
-resuming either timer. If any gate fails, leave writers paused and use a new
-private `mktemp` directory for every restore retry; never reuse a partial
-restore target.
+`check.sh`, successful `backup.sh`, and fresh post-prune `restore-latest.sh`
+gates above before resuming either timer. If any gate fails, leave writers
+paused and use a new private `mktemp` directory for every restore retry; never
+reuse a partial restore target.

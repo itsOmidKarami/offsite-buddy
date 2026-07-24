@@ -214,6 +214,47 @@ def main():
     assert "authentication" in quota_recovery_docs
     assert "network" in quota_recovery_docs
 
+    quota_smoke = read("tests/quota-full.yml")
+    reset_preflight = quota_smoke.split(
+        "- name: Reset quota-full workspace", 1
+    )[0]
+    for snippet in (
+        "Probe quota-full reset mount state",
+        "Probe quota-full reset loop state",
+        "quota_reset_mount_probe.rc == 1",
+        "quota_reset_mount_probe.stdout | trim | length == 0",
+        "quota_reset_mount_probe.stderr | trim | length == 0",
+        "quota_reset_loop_probe.rc == 0",
+        "quota_reset_loop_probe.stdout | trim | length == 0",
+        "quota_reset_loop_probe.stderr | trim | length == 0",
+        "Refuse quota-full reset with active resources",
+    ):
+        assert snippet in reset_preflight, "quota reset preflight missing: %s" % snippet
+
+    quota_teardown = quota_smoke.split("      always:", 1)[1]
+    quota_workspace_removal = quota_teardown.split(
+        "- name: Remove quota-full workspace", 1
+    )[1].split("- name: Confirm quota-full workspace is absent", 1)[0]
+    for snippet in (
+        "quota_cleanup_allowed | default(false)",
+        "quota_mount_probe.rc == 1",
+        "quota_mount_probe.stdout | trim | length == 0",
+        "quota_mount_probe.stderr | trim | length == 0",
+        "quota_loop_probe.rc == 0",
+        "quota_loop_probe.stdout | trim | length == 0",
+        "quota_loop_probe.stderr | trim | length == 0",
+    ):
+        assert snippet in quota_workspace_removal, (
+            "quota workspace removal must require: %s" % snippet
+        )
+    assert quota_teardown.index("Confirm bounded repository is unmounted") < (
+        quota_teardown.index("Remove quota-full workspace")
+    )
+    assert quota_teardown.index("Confirm no loop device remains attached") < (
+        quota_teardown.index("Remove quota-full workspace")
+    )
+    assert "cleanup also failed:" in quota_teardown
+
     ugos_docs = read("docs/ugos.md").lower()
     quota_readme = read("roles/quota/README.md").lower()
     for document in (ugos_docs, quota_readme):
@@ -232,7 +273,12 @@ def main():
         post_close_docs.index('label=com.docker.compose.project=offsitebuddy-friend-alice"')
     ) < post_close_docs.index("options=.*--append-only") < post_close_docs.index(
         "/etc/offsitebuddy/jobs/photos_to_alice/check.sh"
+    ) < post_close_docs.index(
+        "/etc/offsitebuddy/jobs/photos_to_alice/backup.sh"
+    ) < post_close_docs.index(
+        "/etc/offsitebuddy/jobs/photos_to_alice/restore-latest.sh"
     )
+    assert "successful backup" in post_close_docs
     failure_docs = docs.split("## failure handling", 1)[1]
     assert failure_docs.index("compose.maintenance.yaml down --remove-orphans") < (
         failure_docs.index("compose.yaml up -d")

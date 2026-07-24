@@ -48,6 +48,38 @@
     - name: Run quota-full recovery scenario
       when: quota_uname.stdout == 'Linux'
       block:
+        - name: Probe quota-full reset mount state
+          ansible.builtin.command:
+            argv: [findmnt, --mountpoint, "{{ quota_repo }}"]
+          register: quota_reset_mount_probe
+          changed_when: false
+          failed_when: false
+
+        - name: Probe quota-full reset loop state
+          ansible.builtin.command:
+            argv: [losetup, -j, "{{ quota_image }}"]
+          become: true
+          register: quota_reset_loop_probe
+          changed_when: false
+          failed_when: false
+
+        - name: Refuse quota-full reset with active resources
+          ansible.builtin.assert:
+            that:
+              - quota_reset_mount_probe.rc == 1
+              - quota_reset_mount_probe.stdout | trim | length == 0
+              - quota_reset_mount_probe.stderr | trim | length == 0
+              - quota_reset_loop_probe.rc == 0
+              - quota_reset_loop_probe.stdout | trim | length == 0
+              - quota_reset_loop_probe.stderr | trim | length == 0
+            fail_msg: >-
+              Refusing quota-full workspace reset because its mount or loop
+              state is active or could not be safely inspected.
+
+        - name: Authorize quota-full workspace cleanup
+          ansible.builtin.set_fact:
+            quota_cleanup_allowed: true
+
         - name: Reset quota-full workspace
           ansible.builtin.file:
             path: "{{ quota_base }}"
@@ -361,7 +393,9 @@
             path: "{{ quota_repo }}"
             state: unmounted
           become: true
-          when: quota_mount is defined
+          when:
+            - quota_cleanup_allowed | default(false)
+            - quota_mount is defined
           failed_when: false
 
         - name: Detach bounded repository loop devices
@@ -376,6 +410,7 @@
           become: true
           changed_when: false
           failed_when: false
+          when: quota_cleanup_allowed | default(false)
 
         - name: Confirm failure heartbeat process stopped
           ansible.builtin.shell:
@@ -416,11 +451,20 @@
             path: "{{ quota_base }}"
             state: absent
           failed_when: false
+          when:
+            - quota_cleanup_allowed | default(false)
+            - quota_mount_probe.rc == 1
+            - quota_mount_probe.stdout | trim | length == 0
+            - quota_mount_probe.stderr | trim | length == 0
+            - quota_loop_probe.rc == 0
+            - quota_loop_probe.stdout | trim | length == 0
+            - quota_loop_probe.stderr | trim | length == 0
 
         - name: Confirm quota-full workspace is absent
           ansible.builtin.stat:
             path: "{{ quota_base }}"
           register: quota_workspace_probe
+          failed_when: false
 
         - name: Record quota-full teardown postcondition failures
           ansible.builtin.set_fact:
@@ -433,14 +477,23 @@
                      length > 0) and
                     (quota_heartbeat_live.rc | default(1) == 0)
                   ) else '',
-                  'repository unmount'
-                  if (quota_mount_probe.rc | default(1) == 0) else '',
-                  'loop detach'
-                  if (
-                    (quota_loop_probe.rc | default(1) != 0) or
-                    (quota_loop_probe.stdout | default('') | trim | length > 0)
+                  'repository mounted or mount probe failed'
+                  if not (
+                    (quota_mount_probe.rc | default(-1) == 1) and
+                    (quota_mount_probe.stdout | default('') | trim |
+                     length == 0) and
+                    (quota_mount_probe.stderr | default('') | trim |
+                     length == 0)
                   ) else '',
-                  'workspace removal'
+                  'loop device attached or loop probe failed'
+                  if not (
+                    (quota_loop_probe.rc | default(-1) == 0) and
+                    (quota_loop_probe.stdout | default('') | trim |
+                     length == 0) and
+                    (quota_loop_probe.stderr | default('') | trim |
+                     length == 0)
+                  ) else '',
+                  'workspace retained'
                   if (quota_workspace_probe.stat.exists | default(true)) else ''
                 ] | reject('equalto', '') | list
               }}
@@ -448,10 +501,21 @@
         - name: Fail after quota-full scenario or cleanup error
           ansible.builtin.fail:
             msg: >-
-              {{ quota_primary_failure_message | default(
-                 'Quota-full cleanup failed: ' ~
-                 (quota_cleanup_failures | join(', '))
-              ) }}
+              {{
+                (
+                  quota_primary_failure_message ~
+                  (
+                    '; cleanup also failed: ' ~
+                    (quota_cleanup_failures | join(', '))
+                    if quota_cleanup_failures | length > 0
+                    else ''
+                  )
+                )
+                if quota_primary_failure_message is defined
+                else
+                'Quota-full cleanup failed: ' ~
+                (quota_cleanup_failures | join(', '))
+              }}
           when: >-
             quota_primary_failure_message is defined or
             quota_cleanup_failures | length > 0
