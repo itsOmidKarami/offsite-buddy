@@ -169,6 +169,14 @@ def main():
         "append-only",
     ):
         assert text in docs
+    for text in (
+        "every backup and check job",
+        "including jobs on other hosts",
+        "same repository",
+        "repeat these commands for each matching job",
+    ):
+        assert text in docs
+    assert "do not combine friends or jobs in one window" not in docs
     for command in (
         "-f /srv/offsitebuddy/friends/alice/compose.yaml",
         "-f /srv/offsitebuddy/friends/alice/compose.maintenance.yaml",

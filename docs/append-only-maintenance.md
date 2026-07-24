@@ -2,18 +2,22 @@
 
 OffsiteBuddy does not enforce retention. It keeps the normal rest-server
 append-only. Retention is manual maintenance: use one approved window for one
-friend and its matching client job. Do not schedule an automatic prune.
+friend and its repository. Do not schedule an automatic prune.
 
 The commands use friend `alice`, client job `photos_to_alice`, and the default
 roots `/srv/offsitebuddy` and `/etc/offsitebuddy/jobs`. Substitute the one
-reviewed friend/job pair and the configured `offsitebuddy_server_root` and
-`offsitebuddy_client_root`; do not combine friends or jobs in one window.
+reviewed friend/repository and the configured `offsitebuddy_server_root` and
+`offsitebuddy_client_root`; do not combine friends or repositories in one
+window.
 
 ## Preflight
 
-Pause the selected job's writers. Run the check-unit lines only when that job
-has a generated check unit. Disabling a timer does not stop an in-flight
-service, so wait until both services are inactive before continuing:
+Identify every backup and check job that targets the same repository,
+including jobs on other hosts. Pause all of them. The commands below show one
+job; repeat these commands for each matching job. Run the check-unit lines only
+when that job has a generated check unit. Disabling a timer does not stop an
+in-flight service, so wait until every matching service is inactive before
+continuing:
 
 ```sh
 sudo systemctl disable --now offsitebuddy-backup-photos_to_alice.timer
