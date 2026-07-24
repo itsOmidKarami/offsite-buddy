@@ -14,10 +14,11 @@ window.
 
 Identify every backup and check job that targets the same repository,
 including jobs on other hosts. Pause all of them. The commands below show one
-job; repeat these commands for each matching job. Run the check-unit lines only
-when that job has a generated check unit. Disabling a timer does not stop an
-in-flight service, so wait until every matching service is inactive before
-continuing:
+job; record each matching timer's host and whether it was enabled.
+Repeat these commands for each matching job on its original host. Run the
+check-unit lines only when that job has a generated check unit. Disabling a
+timer does not stop an in-flight service, so wait until every matching service
+is inactive before continuing:
 
 ```sh
 sudo systemctl disable --now offsitebuddy-backup-photos_to_alice.timer
@@ -39,7 +40,7 @@ preflight_restore="$(sudo mktemp -d /tmp/offsitebuddy-restore-photos-to-alice-pr
 sudo chmod 700 "$preflight_restore"
 sudo /etc/offsitebuddy/jobs/photos_to_alice/check.sh
 sudo /etc/offsitebuddy/jobs/photos_to_alice/restore-latest.sh "$preflight_restore"
-sudo docker compose --project-directory /srv/offsitebuddy/friends/alice \
+sudo docker compose --project-name offsitebuddy-friend-alice --project-directory /srv/offsitebuddy/friends/alice \
   -f /srv/offsitebuddy/friends/alice/compose.yaml ps
 ```
 
@@ -50,7 +51,7 @@ reviewed policy. Prefer `--keep-within*` policies for an append-only threat
 model, for example:
 
 ```sh
-sudo docker compose --project-directory /etc/offsitebuddy/jobs/photos_to_alice \
+sudo docker compose --project-name offsitebuddy-client-photos_to_alice --project-directory /etc/offsitebuddy/jobs/photos_to_alice \
   run --rm restic forget --dry-run --keep-within 90d
 ```
 
@@ -73,7 +74,7 @@ client. This uses the generated client password file; never copy a repository
 password to the server:
 
 ```sh
-sudo docker compose --project-directory /etc/offsitebuddy/jobs/photos_to_alice \
+sudo docker compose --project-name offsitebuddy-client-photos_to_alice --project-directory /etc/offsitebuddy/jobs/photos_to_alice \
   run --rm restic forget --prune --keep-within 90d
 ```
 
@@ -87,6 +88,11 @@ running ordinary rest-server `OPTIONS` includes `--append-only`:
 if sudo docker ps -aq \
   --filter "label=com.docker.compose.project=offsitebuddy-maintenance-friend-alice" | grep -q .; then
   echo "maintenance project is still present" >&2
+  exit 1
+fi
+# This command must print nothing.
+if sudo docker network ls --quiet --filter label=com.docker.compose.project=offsitebuddy-maintenance-friend-alice | grep -q .; then
+  echo "maintenance project network is still present" >&2
   exit 1
 fi
 ordinary_rest_server="$(sudo docker ps -q \
@@ -111,9 +117,10 @@ sudo /etc/offsitebuddy/jobs/photos_to_alice/restore-latest.sh "$post_prune_resto
 sudo rm -rf -- "$preflight_restore" "$post_prune_restore"
 ```
 
-Resume the selected job's backup timer, and its configured check timer, only
-after the runtime, `restic check`, and representative `restore-latest.sh`
-gates succeed:
+After all shared post-prune gates pass—the runtime, `restic check`, and
+representative `restore-latest.sh`—repeat these resume commands on the
+original host for every matching timer that was previously enabled. Previously
+disabled timers must remain disabled:
 
 ```sh
 sudo systemctl enable --now offsitebuddy-backup-photos_to_alice.timer
@@ -133,9 +140,9 @@ sudo docker ps -a \
   --filter "label=com.docker.compose.project=offsitebuddy-maintenance-friend-alice"
 sudo docker ps -a \
   --filter "label=com.docker.compose.project=offsitebuddy-friend-alice"
-sudo docker compose --project-directory /srv/offsitebuddy/friends/alice \
+sudo docker compose --project-name offsitebuddy-maintenance-friend-alice --project-directory /srv/offsitebuddy/friends/alice \
   -f /srv/offsitebuddy/friends/alice/compose.maintenance.yaml down --remove-orphans
-sudo docker compose --project-directory /srv/offsitebuddy/friends/alice \
+sudo docker compose --project-name offsitebuddy-friend-alice --project-directory /srv/offsitebuddy/friends/alice \
   -f /srv/offsitebuddy/friends/alice/compose.yaml up -d
 ```
 

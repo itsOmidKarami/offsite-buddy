@@ -48,6 +48,12 @@ assert_log_excludes() {
     fail "unexpected command in Docker log: $unexpected"
 }
 
+assert_log_includes() {
+  local expected="$1"
+  grep -Fqx "$expected" "$docker_log" ||
+    fail "expected command in Docker log: $expected"
+}
+
 command_line() {
   local line
   local last_line=""
@@ -88,11 +94,12 @@ wait_for_command() {
 }
 
 compose_command() {
-  local compose_file="$1"
-  local command="$2"
-  shift 2
+  local project_name="$1"
+  local compose_file="$2"
+  local command="$3"
+  shift 3
   local rendered
-  printf -v rendered '%q ' compose --project-directory "$job_dir" -f "$compose_file" "$command" "$@"
+  printf -v rendered '%q ' compose --project-name "$project_name" --project-directory "$job_dir" -f "$compose_file" "$command" "$@"
   printf '%s' "${rendered% }"
 }
 
@@ -163,20 +170,30 @@ render_helper normal
 : > "$docker_log"
 set +e
 printf '\n' | PATH="$fake_bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
+  COMPOSE_PROJECT_NAME=hostile-project \
   "$job_dir/maintenance-endpoint.sh" >/dev/null
 normal_status=$?
 set -e
 assert_eq "$normal_status" 0
-normal_restore="$(compose_command "$job_dir/compose.yaml" up -d)"
+ordinary_project="offsitebuddy-friend-test-friend"
+maintenance_project="offsitebuddy-maintenance-friend-test-friend"
+normal_ordinary_down="$(compose_command "$ordinary_project" "$job_dir/compose.yaml" down)"
+normal_maintenance_up="$(compose_command "$maintenance_project" "$job_dir/compose.maintenance.yaml" up -d)"
+normal_maintenance_down="$(compose_command "$maintenance_project" "$job_dir/compose.maintenance.yaml" down --remove-orphans)"
+normal_restore="$(compose_command "$ordinary_project" "$job_dir/compose.yaml" up -d)"
+assert_log_includes "$normal_ordinary_down"
+assert_log_includes "$normal_maintenance_up"
+assert_log_includes "$normal_maintenance_down"
 assert_eq "$(command_line)" "$normal_restore"
 
 render_helper collision
 : > "$docker_log"
-collision_ordinary_down="$(compose_command "$job_dir/compose.yaml" down)"
-collision_maintenance_down="$(compose_command "$job_dir/compose.maintenance.yaml" down --remove-orphans)"
+collision_ordinary_down="$(compose_command "$ordinary_project" "$job_dir/compose.yaml" down)"
+collision_maintenance_down="$(compose_command "$maintenance_project" "$job_dir/compose.maintenance.yaml" down --remove-orphans)"
 set +e
 printf '\n' | PATH="$fake_bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
   FAKE_DOCKER_EXISTING_MAINTENANCE_PROJECT=1 \
+  COMPOSE_PROJECT_NAME=hostile-project \
   "$job_dir/maintenance-endpoint.sh" >/dev/null 2>&1
 collision_status=$?
 set -e
@@ -195,7 +212,7 @@ printf '\n' | PATH="$fake_bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
 cleanup_term_status=$?
 set -e
 assert_eq "$cleanup_term_status" 0
-cleanup_term_restore="$(compose_command "$job_dir/compose.yaml" up -d)"
+cleanup_term_restore="$(compose_command "$ordinary_project" "$job_dir/compose.yaml" up -d)"
 assert_eq "$(command_line)" "$cleanup_term_restore"
 assert_eq "$(ordinary_restore_count)" 1
 
@@ -205,8 +222,8 @@ fifo="$test_dir/maintenance-input"
 mkfifo "$fifo"
 exec 3<> "$fifo"
 fifo_fd_open=1
-maintenance_up="$(compose_command "$job_dir/compose.maintenance.yaml" up -d)"
-term_restore="$(compose_command "$job_dir/compose.yaml" up -d)"
+maintenance_up="$(compose_command "$maintenance_project" "$job_dir/compose.maintenance.yaml" up -d)"
+term_restore="$(compose_command "$ordinary_project" "$job_dir/compose.yaml" up -d)"
 PATH="$fake_bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
   "$job_dir/maintenance-endpoint.sh" < "$fifo" >/dev/null &
 helper_pid=$!
@@ -242,7 +259,7 @@ printf '\n' | PATH="$fake_bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
 maintenance_down_status=$?
 set -e
 assert_eq "$maintenance_down_status" 55
-maintenance_down_restore="$(compose_command "$job_dir/compose.yaml" up -d)"
+maintenance_down_restore="$(compose_command "$ordinary_project" "$job_dir/compose.yaml" up -d)"
 assert_eq "$(command_line)" "$maintenance_down_restore"
 assert_eq "$(ordinary_restore_count)" 1
 assert_file_exists "$job_dir/compose.maintenance.yaml"
@@ -256,7 +273,7 @@ printf '\n' | PATH="$fake_bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
 artifact_removal_status=$?
 set -e
 assert_eq "$artifact_removal_status" 66
-artifact_removal_restore="$(compose_command "$job_dir/compose.yaml" up -d)"
+artifact_removal_restore="$(compose_command "$ordinary_project" "$job_dir/compose.yaml" up -d)"
 assert_eq "$(command_line)" "$artifact_removal_restore"
 assert_eq "$(ordinary_restore_count)" 1
 assert_file_exists "$job_dir/compose.maintenance.yaml"

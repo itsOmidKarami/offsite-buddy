@@ -250,7 +250,11 @@ def main():
     assert "trap cleanup EXIT" in maintenance_helper
     for signal in ("HUP", "INT", "TERM"):
         assert signal in maintenance_helper
-    assert 'compose.yaml" up -d' in maintenance_helper
+    assert 'ordinary_project="offsitebuddy-friend-{{ maintenance_item.0.name }}"' in maintenance_helper
+    assert 'maintenance_project="offsitebuddy-maintenance-friend-{{ maintenance_item.0.name }}"' in maintenance_helper
+    assert maintenance_helper.count('--project-name "$ordinary_project"') == 2
+    assert maintenance_helper.count('--project-name "$maintenance_project"') == 2
+    assert maintenance_helper.index("if [ -n \"$maintenance_containers$maintenance_networks\" ]") < maintenance_helper.index("trap cleanup EXIT") < maintenance_helper.index('compose.yaml" down')
     assert "exit \"$restore_status\"" in maintenance_helper
     assert "artifact_status=$?" in maintenance_helper
     assert "exit \"$artifact_status\"" in maintenance_helper
@@ -265,6 +269,18 @@ def main():
     )[1].split("- name: Parse generated Compose files", 1)[0]
     assert "--project-name" not in maintenance_validation
     assert "maintenance-endpoint.sh" in read("roles/server/tasks/rest_server.yml")
+    for command in (
+        "docker compose --project-name offsitebuddy-friend-alice",
+        "docker compose --project-name offsitebuddy-maintenance-friend-alice",
+        "docker compose --project-name offsitebuddy-client-photos_to_alice",
+        "docker network ls --quiet --filter label=com.docker.compose.project=offsitebuddy-maintenance-friend-alice",
+    ):
+        assert command in docs, "maintenance docs must pin or verify: %s" % command
+    docs_flat = " ".join(docs.split())
+    assert "record each matching timer's host and whether it was enabled" in docs_flat
+    assert "all shared post-prune gates pass" in docs_flat
+    assert "original host for every matching timer that was previously enabled" in docs_flat
+    assert "previously disabled timers must remain disabled" in docs_flat
     server_tasks = read("roles/server/tasks/rest_server.yml")
     identity_preflight = read("roles/server/tasks/project_identity_preflight.yml")
     for snippet in (

@@ -11,10 +11,10 @@ cleanup() {
   trap - EXIT
   trap '' HUP INT TERM
   set +e
-  docker compose --project-directory "$job_dir" \
+  docker compose --project-name "$maintenance_project" --project-directory "$job_dir" \
     -f "$job_dir/compose.maintenance.yaml" down --remove-orphans
   maintenance_status=$?
-  docker compose --project-directory "$job_dir" \
+  docker compose --project-name "$ordinary_project" --project-directory "$job_dir" \
     -f "$job_dir/compose.yaml" up -d
   restore_status=$?
   if [ "$maintenance_status" -eq 0 ] && [ "$restore_status" -eq 0 ]; then
@@ -34,6 +34,7 @@ cleanup() {
   exit "$original_status"
 }
 
+ordinary_project="offsitebuddy-friend-{{ maintenance_item.0.name }}"
 maintenance_project="offsitebuddy-maintenance-friend-{{ maintenance_item.0.name }}"
 project_filter="label=com.docker.compose.project=$maintenance_project"
 maintenance_containers="$(
@@ -51,9 +52,9 @@ trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-docker compose --project-directory "$job_dir" \
+docker compose --project-name "$ordinary_project" --project-directory "$job_dir" \
   -f "$job_dir/compose.yaml" down
-docker compose --project-directory "$job_dir" \
+docker compose --project-name "$maintenance_project" --project-directory "$job_dir" \
   -f "$job_dir/compose.maintenance.yaml" up -d
 printf '%s\n' \
   'Maintenance endpoint active for {{ maintenance_item.0.name }}. Press Enter to restore append-only mode.'
