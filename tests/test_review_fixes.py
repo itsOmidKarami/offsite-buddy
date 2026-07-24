@@ -190,6 +190,36 @@ def main():
         assert command in docs
     assert "offsitebuddy_server_root" in docs
     assert "offsitebuddy_client_root" in docs
+
+    quota_recovery_docs = read("docs/quota-full-recovery.md").lower()
+    for text in (
+        "enforced: true",
+        "administrative assertion",
+        "enospc",
+        "failure heartbeat",
+        "increase quota",
+        "append-only maintenance",
+        "no direct repository deletion",
+        "automatic pruning",
+        "restic check",
+        "backup",
+        "restore proof",
+    ):
+        assert text in quota_recovery_docs, "quota recovery docs missing: %s" % text
+    assert "authentication" in quota_recovery_docs
+    assert "network" in quota_recovery_docs
+
+    ugos_docs = read("docs/ugos.md").lower()
+    quota_readme = read("roles/quota/README.md").lower()
+    for document in (ugos_docs, quota_readme):
+        for text in (
+            "write probe",
+            "current writability",
+            "numeric quota",
+            "future capacity",
+        ):
+            assert text in document, "quota documentation missing: %s" % text
+
     post_close_docs = docs.split("## restore append-only operation", 1)[1].split(
         "## failure handling", 1
     )[0]
