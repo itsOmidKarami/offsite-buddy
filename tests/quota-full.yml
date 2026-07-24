@@ -1,0 +1,377 @@
+---
+- name: Exercise quota-full backup recovery
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    quota_base: "{{ playbook_dir | dirname }}/.ansible/tmp/quota-full"
+    quota_image: "{{ quota_base }}/repository.img"
+    quota_repo: "{{ quota_base }}/repository"
+    quota_source: "{{ quota_base }}/source"
+    quota_initial_restore: "{{ quota_base }}/initial-restore"
+    quota_restore: "{{ quota_base }}/restore"
+    quota_heartbeat: "{{ quota_base }}/heartbeat"
+    quota_heartbeat_log: "{{ quota_base }}/heartbeat.log"
+    quota_job_root: "{{ quota_base }}/jobs/quota_full"
+    offsitebuddy_client_root: "{{ quota_base }}/jobs"
+    offsitebuddy_client_owner: "{{ lookup('pipe', 'id -un') }}"
+    offsitebuddy_client_group: "{{ lookup('pipe', 'id -gn') }}"
+    offsitebuddy_start_services: true
+    offsitebuddy_manage_systemd: false
+    offsitebuddy_client_jobs:
+      - name: quota_full
+        repository: "{{ quota_repo }}"
+        password: test-restic-password
+        init_if_missing: true
+        run_initial_backup: true
+        schedule: "03:30"
+        backup_paths:
+          - "{{ quota_source }}"
+        check:
+          enabled: false
+        heartbeat:
+          failure_url: http://127.0.0.1:18080/failure
+  pre_tasks:
+    - name: Detect local quota-full host OS
+      ansible.builtin.command:
+        cmd: uname -s
+      register: quota_uname
+      changed_when: false
+
+    - name: Skip quota-full smoke outside Linux
+      ansible.builtin.meta: end_play
+      when: quota_uname.stdout == 'Darwin'
+
+  tasks:
+    - name: Run quota-full recovery scenario
+      when: quota_uname.stdout == 'Linux'
+      block:
+        - name: Reset quota-full workspace
+          ansible.builtin.file:
+            path: "{{ quota_base }}"
+            state: absent
+
+        - name: Create quota-full workspace directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            mode: "0755"
+          loop:
+            - "{{ quota_base }}"
+            - "{{ quota_repo }}"
+            - "{{ quota_source }}"
+            - "{{ quota_initial_restore }}"
+            - "{{ quota_restore }}"
+            - "{{ quota_heartbeat }}"
+
+        - name: Create bounded repository image
+          ansible.builtin.command:
+            argv: [truncate, -s, 48M, "{{ quota_image }}"]
+          changed_when: true
+
+        - name: Format bounded repository image
+          ansible.builtin.command:
+            argv: [mkfs.ext4, -F, "{{ quota_image }}"]
+          changed_when: true
+
+        - name: Mount bounded repository
+          ansible.posix.mount:
+            path: "{{ quota_repo }}"
+            src: "{{ quota_image }}"
+            fstype: ext4
+            opts: loop
+            state: ephemeral
+          become: true
+          register: quota_mount
+
+        - name: Record bounded repository loop device
+          ansible.builtin.command:
+            argv: [losetup, -j, "{{ quota_image }}"]
+          become: true
+          register: quota_loop_devices
+          changed_when: false
+
+        - name: Write initial quota-full sentinel
+          ansible.builtin.copy:
+            content: "quota-full initial proof\n"
+            dest: "{{ quota_source }}/sentinel.txt"
+            mode: "0644"
+
+        - name: Apply local client job with initial backup
+          ansible.builtin.include_role:
+            name: client
+
+        - name: List initial snapshot
+          ansible.builtin.command:
+            cmd: "{{ quota_job_root }}/snapshots.sh"
+          changed_when: false
+
+        - name: Check initial repository
+          ansible.builtin.command:
+            cmd: "{{ quota_job_root }}/check.sh"
+          changed_when: false
+
+        - name: Restore initial snapshot
+          ansible.builtin.command:
+            argv:
+              - "{{ quota_job_root }}/restore-latest.sh"
+              - "{{ quota_initial_restore }}"
+          changed_when: false
+
+        - name: Read initial restored sentinel
+          ansible.builtin.slurp:
+            path: "{{ quota_initial_restore }}{{ quota_source }}/sentinel.txt"
+          register: quota_initial_sentinel
+
+        - name: Assert initial restore proof
+          ansible.builtin.assert:
+            that:
+              - >-
+                quota_initial_sentinel.content | b64decode ==
+                'quota-full initial proof\n'
+
+        - name: Capture initial snapshot IDs
+          ansible.builtin.command:
+            argv:
+              - docker
+              - compose
+              - --project-directory
+              - "{{ quota_job_root }}"
+              - run
+              - --rm
+              - restic
+              - snapshots
+              - --json
+          register: quota_snapshots_before_failure
+          changed_when: false
+
+        - name: Store initial snapshot IDs
+          ansible.builtin.set_fact:
+            quota_snapshot_ids_before_failure: >-
+              {{ quota_snapshots_before_failure.stdout | from_json |
+                 map(attribute='id') | list }}
+
+        - name: Assert initial snapshot exists
+          ansible.builtin.assert:
+            that:
+              - quota_snapshot_ids_before_failure | length == 1
+
+        - name: Fill bounded repository capacity
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              available_kib="$(df --output=avail "{{ quota_repo }}" |
+                tail -n 1)"
+              if (( available_kib >= 1024 )); then
+                fallocate -l "$((available_kib - 512))K" \
+                  "{{ quota_repo }}/quota-filler"
+              fi
+          args:
+            executable: /bin/bash
+          become: true
+          changed_when: true
+
+        - name: Measure bounded repository capacity
+          ansible.builtin.command:
+            argv: [df, --output=avail, "{{ quota_repo }}"]
+          register: quota_available_space
+          changed_when: false
+
+        - name: Assert less than one MiB remains
+          ansible.builtin.assert:
+            that:
+              - quota_available_space.stdout_lines[-1] | int < 1024
+
+        - name: Add incompressible source data
+          ansible.builtin.command:
+            argv:
+              - dd
+              - if=/dev/urandom
+              - of={{ quota_source }}/incompressible.bin
+              - bs=1M
+              - count=8
+              - status=none
+          changed_when: true
+
+        - name: Create failure heartbeat endpoint
+          ansible.builtin.copy:
+            content: "failure\n"
+            dest: "{{ quota_heartbeat }}/failure"
+            mode: "0644"
+
+        - name: Start failure heartbeat server
+          ansible.builtin.shell:
+            cmd: >-
+              python3 -m http.server 18080 --bind 127.0.0.1 --directory
+              "{{ quota_heartbeat }}" > "{{ quota_heartbeat_log }}" 2>&1 &
+              echo $!
+          args:
+            executable: /bin/bash
+          register: quota_heartbeat_server
+          changed_when: false
+
+        - name: Wait for failure heartbeat server
+          ansible.builtin.wait_for:
+            host: 127.0.0.1
+            port: 18080
+            state: started
+            timeout: 10
+
+        - name: Attempt backup with full repository
+          ansible.builtin.command:
+            cmd: "{{ quota_job_root }}/backup.sh"
+          register: quota_failed_backup
+          changed_when: false
+          failed_when: false
+
+        - name: Assert quota-full backup failure
+          ansible.builtin.assert:
+            that:
+              - quota_failed_backup.rc != 0
+
+        - name: Capture snapshot IDs after quota-full failure
+          ansible.builtin.command:
+            argv:
+              - docker
+              - compose
+              - --project-directory
+              - "{{ quota_job_root }}"
+              - run
+              - --rm
+              - restic
+              - snapshots
+              - --json
+          register: quota_snapshots_after_failure
+          changed_when: false
+
+        - name: Store snapshot IDs after quota-full failure
+          ansible.builtin.set_fact:
+            quota_snapshot_ids_after_failure: >-
+              {{ quota_snapshots_after_failure.stdout | from_json |
+                 map(attribute='id') | list }}
+
+        - name: Assert quota-full failure creates no snapshot
+          ansible.builtin.assert:
+            that:
+              - >-
+                quota_snapshot_ids_after_failure ==
+                quota_snapshot_ids_before_failure
+
+        - name: Read failure heartbeat access log
+          ansible.builtin.slurp:
+            path: "{{ quota_heartbeat_log }}"
+          register: quota_heartbeat_access_log
+          no_log: true
+
+        - name: Assert failure heartbeat was called
+          ansible.builtin.assert:
+            that:
+              - >-
+                quota_heartbeat_access_log.content | b64decode is search(
+                'GET /failure ')
+          no_log: true
+
+        - name: Free bounded repository capacity
+          ansible.builtin.file:
+            path: "{{ quota_repo }}/quota-filler"
+            state: absent
+          become: true
+
+        - name: Check repository after freeing capacity
+          ansible.builtin.command:
+            cmd: "{{ quota_job_root }}/check.sh"
+          changed_when: false
+
+        - name: Update quota-full sentinel
+          ansible.builtin.copy:
+            content: "quota-full recovered proof\n"
+            dest: "{{ quota_source }}/sentinel.txt"
+            mode: "0644"
+
+        - name: Back up after freeing capacity
+          ansible.builtin.command:
+            cmd: "{{ quota_job_root }}/backup.sh"
+          changed_when: false
+
+        - name: Capture snapshot IDs after recovery
+          ansible.builtin.command:
+            argv:
+              - docker
+              - compose
+              - --project-directory
+              - "{{ quota_job_root }}"
+              - run
+              - --rm
+              - restic
+              - snapshots
+              - --json
+          register: quota_snapshots_after_recovery
+          changed_when: false
+
+        - name: Store snapshot IDs after recovery
+          ansible.builtin.set_fact:
+            quota_snapshot_ids_after_recovery: >-
+              {{ quota_snapshots_after_recovery.stdout | from_json |
+                 map(attribute='id') | list }}
+
+        - name: Assert recovery creates a new snapshot
+          ansible.builtin.assert:
+            that:
+              - >-
+                quota_snapshot_ids_after_recovery | difference(
+                quota_snapshot_ids_before_failure) | length == 1
+
+        - name: Restore recovered snapshot
+          ansible.builtin.command:
+            argv:
+              - "{{ quota_job_root }}/restore-latest.sh"
+              - "{{ quota_restore }}"
+          changed_when: false
+
+        - name: Read recovered sentinel
+          ansible.builtin.slurp:
+            path: "{{ quota_restore }}{{ quota_source }}/sentinel.txt"
+          register: quota_recovered_sentinel
+
+        - name: Assert recovered restore proof
+          ansible.builtin.assert:
+            that:
+              - >-
+                quota_recovered_sentinel.content | b64decode ==
+                'quota-full recovered proof\n'
+      always:
+        - name: Stop failure heartbeat server
+          ansible.builtin.command:
+            argv: [/bin/kill, "{{ quota_heartbeat_server.stdout }}"]
+          when: quota_heartbeat_server is defined
+          changed_when: false
+          failed_when: false
+
+        - name: Unmount bounded repository
+          ansible.posix.mount:
+            path: "{{ quota_repo }}"
+            state: unmounted
+          become: true
+          when: quota_mount is defined
+          failed_when: false
+
+        - name: Detach bounded repository loop devices
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              while IFS=: read -r device _; do
+                [[ -z "$device" ]] || losetup -d "$device"
+              done < <(losetup -j "{{ quota_image }}")
+          args:
+            executable: /bin/bash
+          become: true
+          changed_when: false
+          failed_when: false
+
+        - name: Remove quota-full workspace
+          ansible.builtin.file:
+            path: "{{ quota_base }}"
+            state: absent
+          failed_when: false
