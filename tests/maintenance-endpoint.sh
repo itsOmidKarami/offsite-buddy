@@ -173,6 +173,7 @@ assert_eq "$(command_line)" "$normal_restore"
 render_helper collision
 : > "$docker_log"
 collision_ordinary_down="$(compose_command "$job_dir/compose.yaml" down)"
+collision_maintenance_down="$(compose_command "$job_dir/compose.maintenance.yaml" down --remove-orphans)"
 set +e
 printf '\n' | PATH="$fake_bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
   FAKE_DOCKER_EXISTING_MAINTENANCE_PROJECT=1 \
@@ -181,6 +182,9 @@ collision_status=$?
 set -e
 assert_eq "$collision_status" 1
 assert_log_excludes "$collision_ordinary_down"
+assert_log_excludes "$collision_maintenance_down"
+assert_file_exists "$job_dir/compose.maintenance.yaml"
+assert_file_exists "$job_dir/maintenance-endpoint.sh"
 
 render_helper cleanup-term
 : > "$docker_log"

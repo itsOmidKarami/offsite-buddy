@@ -34,10 +34,6 @@ cleanup() {
   exit "$original_status"
 }
 
-trap cleanup EXIT
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
 maintenance_project="offsitebuddy-maintenance-friend-{{ maintenance_item.0.name }}"
 project_filter="label=com.docker.compose.project=$maintenance_project"
 maintenance_containers="$(
@@ -51,6 +47,10 @@ if [ -n "$maintenance_containers$maintenance_networks" ]; then
     "$maintenance_project" >&2
   exit 1
 fi
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 docker compose --project-directory "$job_dir" \
   -f "$job_dir/compose.yaml" down
 docker compose --project-directory "$job_dir" \
