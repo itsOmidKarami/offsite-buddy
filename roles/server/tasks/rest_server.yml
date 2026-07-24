@@ -68,11 +68,11 @@
     loop_var: legacy_project
     label: "{{ legacy_project.friend_name }}"
 
-- name: Remove stale friend server stacks before current convergence
-  ansible.builtin.import_tasks: cleanup.yml
-
 - name: Check server Compose project identity ownership
   ansible.builtin.import_tasks: project_identity_preflight.yml
+
+- name: Remove stale friend server stacks before current convergence
+  ansible.builtin.import_tasks: cleanup.yml
 
 - name: Ensure friend stack directories exist
   ansible.builtin.file:

@@ -252,6 +252,30 @@ def main():
     assert "--project-name" not in maintenance_validation
     assert "maintenance-endpoint.sh" in read("roles/server/tasks/rest_server.yml")
     server_tasks = read("roles/server/tasks/rest_server.yml")
+    identity_preflight = read("roles/server/tasks/project_identity_preflight.yml")
+    for snippet in (
+        "Initialize maintenance Compose preflight friend names",
+        "Collect managed friends selected for cleanup",
+        "Check current maintenance Compose projects",
+        "offsitebuddy_server_maintenance_preflight_friend_names",
+        "offsitebuddy_server_maintenance_compose_inspections",
+        "offsitebuddy_server_maintenance_compose_summaries",
+        "Refuse active or foreign maintenance Compose projects",
+        "com.docker.compose.project=offsitebuddy-maintenance-friend-",
+    ):
+        assert snippet in identity_preflight
+    assert "offsitebuddy_friends | map(attribute='name')" in identity_preflight
+    assert "offsitebuddy_cleanup_stale | bool" in identity_preflight
+    identity_import_index = server_tasks.index(
+        "- name: Check server Compose project identity ownership"
+    )
+    cleanup_import_index = server_tasks.index(
+        "- name: Remove stale friend server stacks before current convergence"
+    )
+    maintenance_removal_index = server_tasks.index(
+        "- name: Remove maintenance files for read-write friends"
+    )
+    assert identity_import_index < cleanup_import_index < maintenance_removal_index
     server_cleanup = read("roles/server/tasks/cleanup.yml")
     assert 'project_name: "offsitebuddy-friend-{{ friend_name }}"' in server_tasks
     assert (
@@ -367,8 +391,8 @@ def main():
     assert server_tasks.index(
         "Refuse to replace legacy generic friend Compose projects"
     ) < server_tasks.index("cleanup.yml")
-    assert server_tasks.index("cleanup.yml") < server_tasks.index(
-        "project_identity_preflight.yml"
+    assert server_tasks.index("project_identity_preflight.yml") < server_tasks.index(
+        "cleanup.yml"
     )
     assert server_tasks.index("project_identity_preflight.yml") < server_tasks.index(
         "Ensure friend stack directories exist"
@@ -382,7 +406,7 @@ def main():
     assert "managed_friend_name not in current_project_names" in (
         server_identity_preflight
     )
-    assert "offsitebuddy_cleanup_stale" not in server_identity_preflight
+    assert "offsitebuddy_cleanup_stale | bool" in server_identity_preflight
     assert "current_maintenance_project_names" in server_identity_preflight
     assert "offsitebuddy_append_only_maintenance_project_names" in (
         server_identity_preflight
