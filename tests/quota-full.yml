@@ -341,11 +341,18 @@
               - >-
                 quota_recovered_sentinel.content | b64decode ==
                 'quota-full recovered proof\n'
+      rescue:
+        - name: Record quota-full scenario failure
+          ansible.builtin.set_fact:
+            quota_primary_failure_message: >-
+              {{ ansible_failed_task.name }}:
+              {{ ansible_failed_result.msg | default('failed') }}
       always:
         - name: Stop failure heartbeat server
           ansible.builtin.command:
             argv: [/bin/kill, "{{ quota_heartbeat_server.stdout }}"]
           when: quota_heartbeat_server is defined
+          register: quota_heartbeat_stop
           changed_when: false
           failed_when: false
 
@@ -355,6 +362,7 @@
             state: unmounted
           become: true
           when: quota_mount is defined
+          register: quota_unmount
           failed_when: false
 
         - name: Detach bounded repository loop devices
@@ -367,6 +375,7 @@
           args:
             executable: /bin/bash
           become: true
+          register: quota_loop_detach
           changed_when: false
           failed_when: false
 
@@ -374,4 +383,32 @@
           ansible.builtin.file:
             path: "{{ quota_base }}"
             state: absent
+          register: quota_workspace_removal
           failed_when: false
+
+        - name: Record quota-full cleanup failures
+          ansible.builtin.set_fact:
+            quota_cleanup_failures: >-
+              {{
+                [
+                  'heartbeat server'
+                  if (quota_heartbeat_stop.failed | default(false)) else '',
+                  'repository unmount'
+                  if (quota_unmount.failed | default(false)) else '',
+                  'loop detach'
+                  if (quota_loop_detach.failed | default(false)) else '',
+                  'workspace removal'
+                  if (quota_workspace_removal.failed | default(false)) else ''
+                ] | reject('equalto', '') | list
+              }}
+
+        - name: Fail after quota-full scenario or cleanup error
+          ansible.builtin.fail:
+            msg: >-
+              {{ quota_primary_failure_message | default(
+                 'Quota-full cleanup failed: ' ~
+                 (quota_cleanup_failures | join(', '))
+              ) }}
+          when: >-
+            quota_primary_failure_message is defined or
+            quota_cleanup_failures | length > 0
