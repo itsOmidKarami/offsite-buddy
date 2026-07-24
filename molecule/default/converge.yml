@@ -29,6 +29,7 @@
           username: bob
           password: test-bob-rest-password
           port: 8100
+          mode: read_write
     offsitebuddy_client_jobs:
       - name: photos_to_bob
         repository: >-

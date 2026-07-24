@@ -44,6 +44,8 @@ jobs:
           uv run ansible-galaxy collection install -r requirements-dev.yml
       - name: Run pre-commit checks
         run: uv run --locked pre-commit run --all-files
+      - name: Test maintenance endpoint cleanup trap
+        run: bash tests/maintenance-endpoint.sh
       - name: Run Molecule converge
         run: |
           molecule_schema_filter="$(

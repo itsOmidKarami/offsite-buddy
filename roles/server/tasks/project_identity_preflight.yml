@@ -9,16 +9,116 @@
     file_type: file
   register: offsitebuddy_server_identity_markers
 
+- name: Initialize maintenance Compose preflight friend names
+  ansible.builtin.set_fact:
+    offsitebuddy_server_maintenance_preflight_friend_names: >-
+      {{ offsitebuddy_friends | map(attribute='name') | list }}
+  no_log: true
+
+- name: Collect managed friends selected for cleanup
+  vars:
+    managed_friend_name: "{{ item.path | dirname | basename }}"
+  ansible.builtin.set_fact:
+    offsitebuddy_server_maintenance_preflight_friend_names: >-
+      {{
+        (
+          offsitebuddy_server_maintenance_preflight_friend_names +
+          [managed_friend_name]
+        ) | unique
+      }}
+  loop: "{{ offsitebuddy_server_identity_markers.files }}"
+  loop_control:
+    label: "{{ managed_friend_name }}"
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - >-
+      item.path | dirname | dirname ==
+      offsitebuddy_server_root ~ '/friends'
+  no_log: true
+
+- name: Check current maintenance Compose projects
+  community.docker.docker_host_info:
+    containers: true
+    containers_all: true
+    containers_filters:
+      label: >-
+        com.docker.compose.project=offsitebuddy-maintenance-friend-{{
+        maintenance_friend_name }}
+    networks: true
+    networks_filters:
+      label: >-
+        com.docker.compose.project=offsitebuddy-maintenance-friend-{{
+        maintenance_friend_name }}
+  loop: "{{ offsitebuddy_server_maintenance_preflight_friend_names }}"
+  loop_control:
+    loop_var: maintenance_friend_name
+    label: "{{ maintenance_friend_name }}"
+  register: offsitebuddy_server_maintenance_compose_inspections
+  no_log: true
+
+- name: Initialize current maintenance Compose summaries
+  ansible.builtin.set_fact:
+    offsitebuddy_server_maintenance_compose_summaries: []
+  no_log: true
+
+- name: Project current maintenance Compose inspections
+  ansible.builtin.set_fact:
+    offsitebuddy_server_maintenance_compose_summaries: >-
+      {{
+        offsitebuddy_server_maintenance_compose_summaries +
+        [{
+          'friend_name': maintenance_inspection.maintenance_friend_name,
+          'project_name':
+            'offsitebuddy-maintenance-friend-' ~
+            maintenance_inspection.maintenance_friend_name,
+          'container_count': maintenance_inspection.containers | length,
+          'network_count': maintenance_inspection.networks | length
+        }]
+      }}
+  loop: >-
+    {{
+      offsitebuddy_server_maintenance_compose_inspections.results |
+      default([])
+    }}
+  loop_control:
+    loop_var: maintenance_inspection
+    label: >-
+      {{ maintenance_inspection.maintenance_friend_name | default('skipped') }}
+  when: not maintenance_inspection.skipped | default(false)
+  no_log: true
+
+- name: Refuse active or foreign maintenance Compose projects
+  ansible.builtin.assert:
+    that:
+      - maintenance_project.container_count == 0
+      - maintenance_project.network_count == 0
+    fail_msg: >-
+      Maintenance Compose project {{ maintenance_project.project_name }} exists
+      ({{ maintenance_project.container_count }} containers,
+      {{ maintenance_project.network_count }} networks). Complete its owning
+      maintenance window or inspect and remove it with its owning Compose
+      definition before rerunning; OffsiteBuddy will not remove it
+      automatically.
+  loop: >-
+    {{ offsitebuddy_server_maintenance_compose_summaries | default([]) }}
+  loop_control:
+    loop_var: maintenance_project
+    label: "{{ maintenance_project.friend_name }}"
+
 - name: Refuse managed friend names that shadow current Compose projects
   vars:
     managed_friend_name: "{{ item.path | dirname | basename }}"
-    current_project_names: >-
+    current_ordinary_project_names: >-
       {{
         offsitebuddy_friends
         | map(attribute='name')
         | map('regex_replace', '^', 'offsitebuddy-friend-')
         | list
       }}
+    current_maintenance_project_names: >-
+      {{ offsitebuddy_append_only_maintenance_project_names }}
+    current_project_names: >-
+      {{ current_ordinary_project_names + current_maintenance_project_names }}
   ansible.builtin.assert:
     that:
       - managed_friend_name not in current_project_names

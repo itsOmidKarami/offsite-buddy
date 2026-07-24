@@ -1,0 +1,53 @@
+---
+- name: Require the server role to reject a maintenance project identity name
+  block:
+    - name: Apply server role with a maintenance identity collision
+      ansible.builtin.include_role:
+        name: server
+      vars:
+        offsitebuddy_server_root: >-
+          {{ offsitebuddy_validation_base }}/server-maintenance-identity
+        offsitebuddy_start_services: false
+        offsitebuddy_friends:
+          - name: alice
+            quota:
+              path: "{{ offsitebuddy_validation_base }}/quota-alice"
+              enforced: true
+              enforcement_note: "Validation test quota path."
+            tailscale:
+              hostname: validation-alice
+              auth_key: maintenance-identity-alice-auth-key
+            rest_server:
+              username: alice
+              password: maintenance-identity-alice-password
+          - name: offsitebuddy-maintenance-friend-alice
+            quota:
+              path: "{{ offsitebuddy_validation_base }}/quota-collision"
+              enforced: true
+              enforcement_note: "Validation test quota path."
+            tailscale:
+              hostname: validation-collision
+              auth_key: maintenance-identity-collision-auth-key
+            rest_server:
+              username: collision
+              password: maintenance-identity-collision-password
+              mode: read_write
+
+    - name: Fail when maintenance identity collision passes validation
+      ansible.builtin.fail:
+        msg: Maintenance identity collision unexpectedly passed validation.
+  rescue:
+    - name: Assert maintenance identity failure is safe and specific
+      ansible.builtin.assert:
+        that:
+          - >-
+            ansible_failed_result.msg is search(
+              'append-only maintenance Compose project identity'
+            ) or
+            ansible_failed_result.results | selectattr(
+              'msg', 'search',
+              'append-only maintenance Compose project identity'
+            ) | list | length > 0
+        fail_msg: >-
+          Maintenance identity collision did not fail with the safe
+          identity-specific validation message.
