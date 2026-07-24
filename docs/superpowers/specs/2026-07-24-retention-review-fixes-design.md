@@ -7,10 +7,11 @@ helper, while preserving the existing manual prune workflow.
 
 ## Design
 
-Before the server role writes or removes maintenance files, inspect Docker for
-each configured friend's exact maintenance Compose project identity. Refuse
-convergence if any matching containers or networks exist. This prevents mode
-transitions and ordinary convergence from changing recovery files during an
+Before the server role runs stale cleanup or changes maintenance files, inspect
+Docker for the exact maintenance Compose project identity of every configured
+friend and every managed stale friend selected for cleanup. Refuse convergence
+if any matching containers or networks exist. This prevents mode transitions,
+ordinary convergence, and stale cleanup from changing recovery files during an
 active or foreign maintenance project.
 
 Immediately before the helper stops the ordinary append-only project, repeat
@@ -31,7 +32,7 @@ repository, including jobs on other hosts, before policy preview or prune.
 Extend the existing helper harness to prove that an exact-identity collision is
 refused and that a signal delivered during cleanup cannot interrupt ordinary
 project restoration. Reuse the existing maintenance identity-shadow Molecule
-fixture without a managed marker so it exercises the Docker-state guard rather
-than the marker guard. Keep focused static assertions for restart policy,
-preflight ordering, and runbook wording, then run the repository's existing
-validation suite.
+fixture without a managed marker so it exercises the Docker-state guard for
+both a current mode transition and managed stale cleanup. Keep focused static
+assertions for restart policy, preflight ordering, and runbook wording, then
+run the repository's existing validation suite.

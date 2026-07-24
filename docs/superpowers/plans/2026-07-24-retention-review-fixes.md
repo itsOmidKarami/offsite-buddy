@@ -4,7 +4,7 @@
 
 **Goal:** Make append-only maintenance refuse ambiguous Docker ownership, remain fail-closed through restarts and signals, and require every repository writer to be paused.
 
-**Architecture:** Extend the existing server identity preflight with an exact Docker label inspection for every configured friend's maintenance project. Repeat that inspection in the generated helper immediately before changing projects, then use the existing helper harness and Molecule identity-shadow fixture for regression coverage.
+**Architecture:** Run the existing server identity preflight before stale cleanup and extend it with an exact Docker label inspection for every configured friend plus every managed stale friend selected for cleanup. Repeat that inspection in the generated helper immediately before changing projects, then use the existing helper harness and Molecule identity-shadow fixture for regression coverage.
 
 **Tech Stack:** Ansible, Docker Compose, Bash, Molecule, Python static checks
 
@@ -23,10 +23,11 @@
 **Files:**
 - Modify: `tests/test_review_fixes.py`
 - Modify: `molecule/cleanup/side_effect.yml`
+- Modify: `roles/server/tasks/rest_server.yml`
 - Modify: `roles/server/tasks/project_identity_preflight.yml`
 
 **Interfaces:**
-- Consumes: `offsitebuddy_friends[*].name` and Docker resources labeled `com.docker.compose.project=offsitebuddy-maintenance-friend-<name>`
+- Consumes: `offsitebuddy_friends[*].name`, managed friend markers selected by `offsitebuddy_cleanup_stale`, and Docker resources labeled `com.docker.compose.project=offsitebuddy-maintenance-friend-<name>`
 - Produces: `offsitebuddy_server_maintenance_compose_summaries`, containing only friend name, project name, container count, and network count
 
 - [ ] **Step 1: Add failing static assertions**
@@ -36,31 +37,36 @@ Add this after `server_tasks` is loaded in `tests/test_review_fixes.py`:
 ```python
     identity_preflight = read("roles/server/tasks/project_identity_preflight.yml")
     for snippet in (
+        "Initialize maintenance Compose preflight friend names",
+        "Collect managed friends selected for cleanup",
         "Check current maintenance Compose projects",
+        "offsitebuddy_server_maintenance_preflight_friend_names",
         "offsitebuddy_server_maintenance_compose_inspections",
         "offsitebuddy_server_maintenance_compose_summaries",
         "Refuse active or foreign maintenance Compose projects",
         "com.docker.compose.project=offsitebuddy-maintenance-friend-",
     ):
         assert snippet in identity_preflight
-    maintenance_query = identity_preflight.split(
-        "- name: Check current maintenance Compose projects", 1
-    )[1].split("- name: Initialize current maintenance Compose summaries", 1)[0]
-    assert "offsitebuddy_friends | map(attribute='name')" in maintenance_query
+    assert "offsitebuddy_friends | map(attribute='name')" in identity_preflight
+    assert "offsitebuddy_cleanup_stale | bool" in identity_preflight
     identity_import_index = server_tasks.index(
         "- name: Check server Compose project identity ownership"
+    )
+    cleanup_import_index = server_tasks.index(
+        "- name: Remove stale friend server stacks before current convergence"
     )
     maintenance_removal_index = server_tasks.index(
         "- name: Remove maintenance files for read-write friends"
     )
-    assert identity_import_index < maintenance_removal_index
+    assert identity_import_index < cleanup_import_index < maintenance_removal_index
 ```
 
 - [ ] **Step 2: Convert the maintenance identity-shadow fixture to a Docker-only collision**
 
 In `molecule/cleanup/side_effect.yml`, remove `.offsitebuddy-managed` from the
-fixture file loop, set the invoked friend's mode to `read_write`, expect the
-new refusal task, and remove the deleted marker from the later assertions:
+foreign fixture file loop, set the invoked friend's mode to `read_write`,
+expect the new refusal task, and remove the deleted marker from the later
+assertions:
 
 ```yaml
         - name: Create server maintenance identity shadow sentinel
@@ -107,6 +113,83 @@ The post-refusal stat loop and assertion become:
                 server_maintenance_shadow_compose_before.stat.checksum
 ```
 
+After that assertion, add a stale-cleanup case which reuses the same running
+maintenance project:
+
+```yaml
+        - name: Create managed stale friend directory
+          ansible.builtin.file:
+            path: >-
+              {{
+                server_maintenance_shadow_root ~ '/friends/' ~
+                server_shadow_current
+              }}
+            state: directory
+            mode: "0755"
+
+        - name: Create managed stale friend recovery files
+          ansible.builtin.copy:
+            dest: >-
+              {{
+                server_maintenance_shadow_root ~ '/friends/' ~
+                server_shadow_current ~ '/' ~ item
+              }}
+            content: preserved
+            mode: "0600"
+          loop:
+            - .offsitebuddy-managed
+            - compose.maintenance.yaml
+            - maintenance-endpoint.sh
+
+        - name: Require stale maintenance project refusal
+          block:
+            - name: Invoke server cleanup against active stale maintenance
+              ansible.builtin.include_role:
+                name: server
+                tasks_from: main.yml
+              vars:
+                offsitebuddy_server_root: "{{ server_maintenance_shadow_root }}"
+                offsitebuddy_cleanup_stale: true
+                offsitebuddy_start_services: true
+                offsitebuddy_friends: []
+
+            - name: Fail if stale maintenance project is accepted
+              ansible.builtin.fail:
+                msg: Active stale maintenance project unexpectedly passed preflight.
+          rescue:
+            - name: Assert stale maintenance project refusal is safe
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    ansible_failed_task.name is search(
+                      'Refuse active or foreign maintenance Compose projects'
+                    )
+                  - >-
+                    (ansible_failed_result | to_json) is search(
+                      server_maintenance_shadow_legacy
+                    )
+
+        - name: Check stale maintenance recovery files after refusal
+          ansible.builtin.stat:
+            path: >-
+              {{
+                server_maintenance_shadow_root ~ '/friends/' ~
+                server_shadow_current ~ '/' ~ item
+              }}
+          loop:
+            - .offsitebuddy-managed
+            - compose.maintenance.yaml
+            - maintenance-endpoint.sh
+          register: server_stale_maintenance_files
+
+        - name: Verify stale maintenance recovery files were preserved
+          ansible.builtin.assert:
+            that:
+              - >-
+                server_stale_maintenance_files.results |
+                map(attribute='stat.exists') | list == [true, true, true]
+```
+
 - [ ] **Step 3: Run the focused checks and verify RED**
 
 Run:
@@ -124,14 +207,55 @@ Run:
 UV_CACHE_DIR=.uv-cache uv run --locked molecule test -s cleanup --no-report
 ```
 
-Expected: FAIL with `Server maintenance identity shadow unexpectedly passed preflight.`
+Expected: FAIL with `Server maintenance identity shadow unexpectedly passed
+preflight.` before the stale-cleanup case can pass.
 
-- [ ] **Step 4: Implement the exact Docker-state preflight**
+- [ ] **Step 4: Move the shared preflight before stale cleanup**
 
-Prepend this to `roles/server/tasks/project_identity_preflight.yml`:
+In `roles/server/tasks/rest_server.yml`, order the imports this way:
 
 ```yaml
----
+- name: Check server Compose project identity ownership
+  ansible.builtin.import_tasks: project_identity_preflight.yml
+
+- name: Remove stale friend server stacks before current convergence
+  ansible.builtin.import_tasks: cleanup.yml
+```
+
+- [ ] **Step 5: Implement the exact Docker-state preflight**
+
+Keep the existing marker discovery first in
+`roles/server/tasks/project_identity_preflight.yml`, then insert this before
+the existing marker-shadow assertion:
+
+```yaml
+- name: Initialize maintenance Compose preflight friend names
+  ansible.builtin.set_fact:
+    offsitebuddy_server_maintenance_preflight_friend_names: >-
+      {{ offsitebuddy_friends | map(attribute='name') | list }}
+  no_log: true
+
+- name: Collect managed friends selected for cleanup
+  vars:
+    managed_friend_name: "{{ item.path | dirname | basename }}"
+  ansible.builtin.set_fact:
+    offsitebuddy_server_maintenance_preflight_friend_names: >-
+      {{
+        (
+          offsitebuddy_server_maintenance_preflight_friend_names +
+          [managed_friend_name]
+        ) | unique
+      }}
+  loop: "{{ offsitebuddy_server_identity_markers.files }}"
+  loop_control:
+    label: "{{ managed_friend_name }}"
+  when:
+    - offsitebuddy_cleanup_stale | bool
+    - >-
+      item.path | dirname | dirname ==
+      offsitebuddy_server_root ~ '/friends'
+  no_log: true
+
 - name: Check current maintenance Compose projects
   community.docker.docker_host_info:
     containers: true
@@ -145,7 +269,7 @@ Prepend this to `roles/server/tasks/project_identity_preflight.yml`:
       label: >-
         com.docker.compose.project=offsitebuddy-maintenance-friend-{{
         maintenance_friend_name }}
-  loop: "{{ offsitebuddy_friends | map(attribute='name') | list }}"
+  loop: "{{ offsitebuddy_server_maintenance_preflight_friend_names }}"
   loop_control:
     loop_var: maintenance_friend_name
     label: "{{ maintenance_friend_name }}"
@@ -202,10 +326,9 @@ Prepend this to `roles/server/tasks/project_identity_preflight.yml`:
     label: "{{ maintenance_project.friend_name }}"
 ```
 
-Keep the existing marker-based preflight tasks immediately after this block,
-without a second YAML document marker.
+Keep the existing marker-based shadow assertion immediately after this block.
 
-- [ ] **Step 5: Verify GREEN**
+- [ ] **Step 6: Verify GREEN**
 
 Run:
 
@@ -214,13 +337,14 @@ UV_CACHE_DIR=.uv-cache uv run --locked python tests/test_review_fixes.py
 UV_CACHE_DIR=.uv-cache uv run --locked molecule test -s cleanup --no-report
 ```
 
-Expected: both PASS, and the Molecule refusal reports the new exact-identity
-guard while preserving the foreign fixture.
+Expected: both PASS. Molecule reports the exact-identity guard for the
+read-write current friend and the managed stale friend, and preserves the
+foreign fixture plus all stale recovery files.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add tests/test_review_fixes.py molecule/cleanup/side_effect.yml roles/server/tasks/project_identity_preflight.yml
+git add tests/test_review_fixes.py molecule/cleanup/side_effect.yml roles/server/tasks/rest_server.yml roles/server/tasks/project_identity_preflight.yml
 git commit -m "fix: refuse active maintenance projects"
 ```
 
