@@ -21,7 +21,8 @@ Choose one path for the affected repository:
 
 1. Increase quota or underlying storage capacity using the storage provider's
    administrative interface. Then run `restic check`, run a backup, and make a
-   restore proof with the generated restore helper.
+   restore proof with the generated restore helper. Resume the affected backup
+   timer only after `restic check`, a successful backup, and restore proof pass.
 2. If the reviewed retention policy allows it, follow the
    [append-only maintenance workflow](append-only-maintenance.md). It pauses
    writers, opens a controlled maintenance window, runs the reviewed prune,

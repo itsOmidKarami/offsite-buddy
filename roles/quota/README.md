@@ -11,7 +11,7 @@ the storage provider.
 
 ## Requirements
 
-- A Linux filesystem and quota tooling compatible with the target host.
+- An externally provisioned quota-backed path on the target host.
 
 ## Role Variables
 

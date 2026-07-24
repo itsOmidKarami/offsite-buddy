@@ -206,6 +206,11 @@ def main():
         "restore proof",
     ):
         assert text in quota_recovery_docs, "quota recovery docs missing: %s" % text
+    quota_recovery_docs_flat = " ".join(quota_recovery_docs.split())
+    assert (
+        "resume the affected backup timer only after `restic check`, a "
+        "successful backup, and restore proof pass" in quota_recovery_docs_flat
+    )
     assert "authentication" in quota_recovery_docs
     assert "network" in quota_recovery_docs
 
