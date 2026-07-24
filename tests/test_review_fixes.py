@@ -246,6 +246,12 @@ def main():
     assert "exit \"$restore_status\"" in maintenance_helper
     assert "artifact_status=$?" in maintenance_helper
     assert "exit \"$artifact_status\"" in maintenance_helper
+    assert maintenance_compose.count('restart: "no"') == 2
+    assert "restart: unless-stopped" not in maintenance_compose
+    assert 'maintenance_project="offsitebuddy-maintenance-friend-' in maintenance_helper
+    assert 'docker ps --all --quiet --filter "$project_filter"' in maintenance_helper
+    assert 'docker network ls --quiet --filter "$project_filter"' in maintenance_helper
+    assert "trap '' HUP INT TERM" in maintenance_helper
     maintenance_validation = maintenance_verify.split(
         "- name: Validate maintenance Compose configuration", 1
     )[1].split("- name: Parse generated Compose files", 1)[0]

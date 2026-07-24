@@ -16,7 +16,7 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
-    restart: unless-stopped
+    restart: "no"
 
   rest-server:
     image: "{{ offsitebuddy_rest_server_image }}"
@@ -35,4 +35,4 @@ services:
         source: ./htpasswd
         target: /run/secrets/htpasswd
         read_only: true
-    restart: unless-stopped
+    restart: "no"

@@ -42,6 +42,12 @@ assert_file_exists() {
   [ -e "$1" ] || fail "expected file to exist: $1"
 }
 
+assert_log_excludes() {
+  local unexpected="$1"
+  ! grep -Fqx "$unexpected" "$docker_log" ||
+    fail "unexpected command in Docker log: $unexpected"
+}
+
 command_line() {
   local line
   local last_line=""
@@ -125,6 +131,19 @@ if [ "${FAKE_DOCKER_FAIL_MAINTENANCE_DOWN:-}" = 1 ] &&
   [ "${@: -1}" = --remove-orphans ]; then
   exit 55
 fi
+
+if [ "${FAKE_DOCKER_EXISTING_MAINTENANCE_PROJECT:-}" = 1 ] &&
+  [ "${1:-}" = ps ]; then
+  printf 'existing-maintenance-container\n'
+fi
+
+if [ "${FAKE_DOCKER_SIGNAL_DURING_MAINTENANCE_DOWN:-}" = 1 ] &&
+  [ "$#" -ge 3 ] &&
+  [[ "${@: -3:1}" == */compose.maintenance.yaml ]] &&
+  [ "${@: -2:1}" = down ] &&
+  [ "${@: -1}" = --remove-orphans ]; then
+  kill -TERM "$PPID"
+fi
 EOF
 chmod +x "$fake_bin/docker"
 
@@ -150,6 +169,31 @@ set -e
 assert_eq "$normal_status" 0
 normal_restore="$(compose_command "$job_dir/compose.yaml" up -d)"
 assert_eq "$(command_line)" "$normal_restore"
+
+render_helper collision
+: > "$docker_log"
+collision_ordinary_down="$(compose_command "$job_dir/compose.yaml" down)"
+set +e
+printf '\n' | PATH="$fake_bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
+  FAKE_DOCKER_EXISTING_MAINTENANCE_PROJECT=1 \
+  "$job_dir/maintenance-endpoint.sh" >/dev/null 2>&1
+collision_status=$?
+set -e
+assert_eq "$collision_status" 1
+assert_log_excludes "$collision_ordinary_down"
+
+render_helper cleanup-term
+: > "$docker_log"
+set +e
+printf '\n' | PATH="$fake_bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
+  FAKE_DOCKER_SIGNAL_DURING_MAINTENANCE_DOWN=1 \
+  "$job_dir/maintenance-endpoint.sh" >/dev/null
+cleanup_term_status=$?
+set -e
+assert_eq "$cleanup_term_status" 0
+cleanup_term_restore="$(compose_command "$job_dir/compose.yaml" up -d)"
+assert_eq "$(command_line)" "$cleanup_term_restore"
+assert_eq "$(ordinary_restore_count)" 1
 
 render_helper term
 : > "$docker_log"
