@@ -546,7 +546,9 @@
 
             - name: Fail if stale maintenance project is accepted
               ansible.builtin.fail:
-                msg: Active stale maintenance project unexpectedly passed preflight.
+                msg: >-
+                  Active stale maintenance project unexpectedly passed
+                  preflight.
           rescue:
             - name: Assert stale maintenance project refusal is safe
               ansible.builtin.assert:
