@@ -351,8 +351,8 @@
         - name: Stop failure heartbeat server
           ansible.builtin.command:
             argv: [/bin/kill, "{{ quota_heartbeat_server.stdout }}"]
-          when: quota_heartbeat_server is defined
-          register: quota_heartbeat_stop
+          when: >-
+            quota_heartbeat_server.stdout | default('') | trim | length > 0
           changed_when: false
           failed_when: false
 
@@ -362,7 +362,6 @@
             state: unmounted
           become: true
           when: quota_mount is defined
-          register: quota_unmount
           failed_when: false
 
         - name: Detach bounded repository loop devices
@@ -375,7 +374,6 @@
           args:
             executable: /bin/bash
           become: true
-          register: quota_loop_detach
           changed_when: false
           failed_when: false
 
@@ -383,22 +381,67 @@
           ansible.builtin.file:
             path: "{{ quota_base }}"
             state: absent
-          register: quota_workspace_removal
           failed_when: false
 
-        - name: Record quota-full cleanup failures
+        - name: Confirm failure heartbeat process stopped
+          ansible.builtin.shell:
+            cmd: |
+              for _ in {1..10}; do
+                if ! kill -0 \
+                  "{{ quota_heartbeat_server.stdout }}" 2>/dev/null; then
+                  exit 1
+                fi
+                sleep 1
+              done
+              exit 0
+          args:
+            executable: /bin/bash
+          when: >-
+            quota_heartbeat_server.stdout | default('') | trim | length > 0
+          register: quota_heartbeat_live
+          changed_when: false
+          failed_when: false
+
+        - name: Confirm bounded repository is unmounted
+          ansible.builtin.command:
+            argv: [findmnt, --mountpoint, "{{ quota_repo }}"]
+          register: quota_mount_probe
+          changed_when: false
+          failed_when: false
+
+        - name: Confirm no loop device remains attached
+          ansible.builtin.command:
+            argv: [losetup, -j, "{{ quota_image }}"]
+          become: true
+          register: quota_loop_probe
+          changed_when: false
+          failed_when: false
+
+        - name: Confirm quota-full workspace is absent
+          ansible.builtin.stat:
+            path: "{{ quota_base }}"
+          register: quota_workspace_probe
+
+        - name: Record quota-full teardown postcondition failures
           ansible.builtin.set_fact:
             quota_cleanup_failures: >-
               {{
                 [
-                  'heartbeat server'
-                  if (quota_heartbeat_stop.failed | default(false)) else '',
+                  'heartbeat process'
+                  if (
+                    (quota_heartbeat_server.stdout | default('') | trim |
+                     length > 0) and
+                    (quota_heartbeat_live.rc | default(1) == 0)
+                  ) else '',
                   'repository unmount'
-                  if (quota_unmount.failed | default(false)) else '',
+                  if (quota_mount_probe.rc | default(1) == 0) else '',
                   'loop detach'
-                  if (quota_loop_detach.failed | default(false)) else '',
+                  if (
+                    (quota_loop_probe.rc | default(1) != 0) or
+                    (quota_loop_probe.stdout | default('') | trim | length > 0)
+                  ) else '',
                   'workspace removal'
-                  if (quota_workspace_removal.failed | default(false)) else ''
+                  if (quota_workspace_probe.stat.exists | default(true)) else ''
                 ] | reject('equalto', '') | list
               }}
 
