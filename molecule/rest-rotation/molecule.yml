@@ -1,0 +1,35 @@
+---
+dependency:
+  name: galaxy
+  options:
+    requirements-file: requirements-dev.yml
+driver:
+  name: docker
+platforms:
+  - name: offsitebuddy-rest-rotation
+    image: geerlingguy/docker-debian12-ansible:latest
+    command: sleep infinity
+    volumes:
+      - ${DOCKER_SOCKET_VOLUME:-/var/run/docker.sock:/docker.sock}
+    pre_build_image: true
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      remote_tmp: /tmp
+  playbooks:
+    cleanup: cleanup.yml
+    converge: converge.yml
+    side_effect: side_effect.yml
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - cleanup
+    - destroy
+    - create
+    - converge
+    - side_effect
+    - verify
+    - cleanup
+    - destroy

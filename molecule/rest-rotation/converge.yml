@@ -1,0 +1,174 @@
+---
+- name: Render old REST server and client credentials
+  hosts: all
+  become: true
+  environment:
+    DOCKER_HOST: >-
+      {{ lookup('env', 'MOLECULE_DOCKER_HOST') |
+      default('unix:///docker.sock', true) }}
+  vars:
+    rotation_old_alice_password: "rotation-old:p@ss?"
+    rotation_new_alice_password: "rotation-new:p@ss?"
+    rotation_bob_password: "rotation-bob:p@ss?"
+    offsitebuddy_start_services: false
+    offsitebuddy_manage_systemd: false
+    offsitebuddy_cleanup_stale: false
+    offsitebuddy_friends:
+      - name: alice
+        quota:
+          path: /tmp/offsitebuddy-rest-rotation-alice-data
+          enforced: true
+          enforcement_note: "Molecule credential-rotation storage."
+        tailscale:
+          hostname: offsitebuddy-rest-rotation-alice
+          auth_key: rotation-alice-tailscale-sentinel
+        rest_server:
+          username: alice
+          password: "{{ rotation_old_alice_password }}"
+          port: 8000
+      - name: bob
+        quota:
+          path: /tmp/offsitebuddy-rest-rotation-bob-data
+          enforced: true
+          enforcement_note: "Molecule unchanged-control storage."
+        tailscale:
+          hostname: offsitebuddy-rest-rotation-bob
+          auth_key: rotation-bob-tailscale-sentinel
+        rest_server:
+          username: bob
+          password: "{{ rotation_bob_password }}"
+          port: 8100
+    offsitebuddy_client_jobs:
+      - name: to_alice
+        repository: >-
+          {{ 'rest:http://alice:' ~ (rotation_old_alice_password | urlencode)
+          ~ '@unit.invalid:8000/' }}
+        password: rotation-alice-restic-sentinel
+        init_if_missing: false
+        run_initial_backup: false
+        schedule: "03:30"
+        backup_paths:
+          - /tmp/offsitebuddy-rest-rotation-alice-source
+      - name: to_bob
+        repository: >-
+          {{ 'rest:http://bob:' ~ (rotation_bob_password | urlencode)
+          ~ '@unit.invalid:8100/' }}
+        password: rotation-bob-restic-sentinel
+        init_if_missing: false
+        run_initial_backup: false
+        schedule: "04:15"
+        backup_paths:
+          - /tmp/offsitebuddy-rest-rotation-bob-source
+  pre_tasks:
+    - name: Create REST rotation data and source paths
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /tmp/offsitebuddy-rest-rotation-alice-data
+        - /tmp/offsitebuddy-rest-rotation-bob-data
+        - /tmp/offsitebuddy-rest-rotation-alice-source
+        - /tmp/offsitebuddy-rest-rotation-bob-source
+  tasks:
+    - name: Render old REST server credentials
+      ansible.builtin.include_role:
+        name: itsomidkarami.offsitebuddy.server
+      no_log: true
+
+    - name: Render old client repository credentials
+      ansible.builtin.include_role:
+        name: itsomidkarami.offsitebuddy.client
+      no_log: true
+
+    - name: Capture old credential artifact checksums
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        checksum_algorithm: sha256
+      loop:
+        - /srv/offsitebuddy/friends/alice/htpasswd
+        - /srv/offsitebuddy/friends/bob/htpasswd
+        - /etc/offsitebuddy/jobs/to_alice/.env
+        - /etc/offsitebuddy/jobs/to_bob/.env
+      register: rotation_before_files
+      no_log: true
+
+    - name: Write old credential artifact checksums
+      ansible.builtin.copy:
+        content: |
+          alice_htpasswd: {{ rotation_before_files.results[0].stat.checksum }}
+          bob_htpasswd: {{ rotation_before_files.results[1].stat.checksum }}
+          alice_env: {{ rotation_before_files.results[2].stat.checksum }}
+          bob_env: {{ rotation_before_files.results[3].stat.checksum }}
+        dest: /tmp/offsitebuddy-rest-rotation-before.yml
+        mode: "0600"
+      no_log: true
+
+    - name: Ensure Docker CLI is available for fixture credential copy
+      ansible.builtin.apt:
+        name: docker.io
+        state: present
+        policy_rc_d: 101
+
+    - name: Create stopped REST rotation fixture
+      community.docker.docker_container:
+        name: offsitebuddy-rest-rotation-fixture
+        image: restic/rest-server:0.14.0
+        state: present
+        network_mode: container:offsitebuddy-rest-rotation
+        env:
+          PASSWORD_FILE: /tmp/htpasswd
+          OPTIONS: "--listen :18080"
+        labels:
+          offsitebuddy.rest-rotation-fixture: "true"
+
+    - name: Copy old Alice htpasswd into the fixture
+      ansible.builtin.command:
+        argv:
+          - docker
+          - cp
+          - /srv/offsitebuddy/friends/alice/htpasswd
+          - offsitebuddy-rest-rotation-fixture:/tmp/htpasswd
+      changed_when: true
+      no_log: true
+
+    - name: Start REST rotation fixture
+      ansible.builtin.command:
+        argv:
+          - docker
+          - start
+          - offsitebuddy-rest-rotation-fixture
+      changed_when: true
+
+    - name: Wait for old REST rotation fixture
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 18080
+        timeout: 60
+
+    - name: Check old Alice credential against fixture
+      ansible.builtin.uri:
+        url: http://127.0.0.1:18080/
+        method: OPTIONS
+        url_username: alice
+        url_password: "{{ rotation_old_alice_password }}"
+        force_basic_auth: true
+        status_code: 401
+      register: old_alice_fixture_auth
+      failed_when: false
+      no_log: true
+
+    - name: Assert old Alice credential is accepted by fixture
+      ansible.builtin.assert:
+        that: old_alice_fixture_auth.status != 401
+      no_log: true
+
+    - name: Check future Alice credential against fixture
+      ansible.builtin.uri:
+        url: http://127.0.0.1:18080/
+        method: OPTIONS
+        url_username: alice
+        url_password: "{{ rotation_new_alice_password }}"
+        force_basic_auth: true
+        status_code: 401
+      no_log: true
