@@ -6,12 +6,20 @@ stdout_file="$(mktemp)"
 stderr_file="$(mktemp)"
 trap 'rm -f "$stdout_file" "$stderr_file"' EXIT
 
-if docker compose --project-directory "$job_dir" run --rm restic snapshots >"$stdout_file" 2>"$stderr_file"; then
+if docker compose \
+  --project-name "offsitebuddy-client-{{ job.name }}" \
+  --project-directory "$job_dir" \
+  -f "$job_dir/compose.yaml" \
+  run --rm restic snapshots >"$stdout_file" 2>"$stderr_file"; then
   exit 0
 fi
 
 if grep -Eiq 'config file|repository.*does not exist|Is there a repository' "$stderr_file"; then
-  docker compose --project-directory "$job_dir" run --rm restic init
+  docker compose \
+    --project-name "offsitebuddy-client-{{ job.name }}" \
+    --project-directory "$job_dir" \
+    -f "$job_dir/compose.yaml" \
+    run --rm restic init
   exit 0
 fi
 

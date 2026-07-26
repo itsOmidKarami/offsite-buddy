@@ -1,0 +1,14 @@
+---
+- name: Inspect exact REST rotation fixture name
+  community.docker.docker_container_info:
+    name: offsitebuddy-rest-rotation-fixture
+  register: rotation_fixture_name_inspection
+  no_log: true
+
+- name: Refuse to replace an existing REST rotation fixture
+  ansible.builtin.assert:
+    that:
+      - not rotation_fixture_name_inspection.exists
+    fail_msg: >-
+      REST rotation fixture name already exists on the Docker daemon;
+      refusing to alter it.

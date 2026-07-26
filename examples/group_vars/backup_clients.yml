@@ -7,12 +7,14 @@ offsitebuddy_client_jobs:
   - name: photos_to_bob
     # Credentials embedded in REST URLs must be URL-encoded.
     repository: >-
-      {{ 'rest:http://alice:' ~ (vault_rest_server_password_alice | urlencode)
+      {{ 'rest:http://alice:' ~ (vault_rest_server_password_alice | urlencode |
+      replace('/', '%2F'))
       ~ '@' ~ offsitebuddy_alice_server_tailnet_ip ~ ':8000/' }}
     # A full MagicDNS FQDN is supported only after it resolves in the generated
     # restic execution path (validate it with snapshots.sh).
     # repository: >-
-    #   {{ 'rest:http://alice:' ~ (vault_rest_server_password_alice | urlencode)
+    #   {{ 'rest:http://alice:' ~
+    #   (vault_rest_server_password_alice | urlencode | replace('/', '%2F'))
     #   ~ '@offsitebuddy-alice.' ~ offsitebuddy_server_tailnet_name
     #   ~ '.ts.net:8000/' }}
     tailscale:

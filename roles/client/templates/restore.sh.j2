@@ -97,5 +97,9 @@ args=(restore "$snapshot" --target "$resolved_target" --verbose=2)
 for include in "${includes[@]}"; do
   args+=(--include "$include")
 done
-docker compose --project-directory "$job_dir" run --rm \
+docker compose \
+  --project-name "offsitebuddy-client-{{ job.name }}" \
+  --project-directory "$job_dir" \
+  -f "$job_dir/compose.yaml" \
+  run --rm \
   -v "$resolved_target:$resolved_target:rw" restic "${args[@]}"

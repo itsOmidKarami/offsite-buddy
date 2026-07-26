@@ -7,8 +7,8 @@
       {{ lookup('env', 'MOLECULE_DOCKER_HOST') |
       default('unix:///docker.sock', true) }}
   vars:
-    rotation_new_alice_password: "rotation-new:p@ss?"
-    rotation_bob_password: "rotation-bob:p@ss?"
+    rotation_new_alice_password: "rotation-new:p@ss?/segment"
+    rotation_bob_password: "rotation-bob:p@ss?/segment"
     offsitebuddy_start_services: false
     offsitebuddy_manage_systemd: false
     offsitebuddy_cleanup_stale: false
@@ -40,7 +40,8 @@
     offsitebuddy_client_jobs:
       - name: to_alice
         repository: >-
-          {{ 'rest:http://alice:' ~ (rotation_new_alice_password | urlencode)
+          {{ 'rest:http://alice:' ~ (rotation_new_alice_password | urlencode |
+          replace('/', '%2F'))
           ~ '@unit.invalid:8000/' }}
         password: rotation-alice-restic-sentinel
         init_if_missing: false
@@ -50,7 +51,8 @@
           - /tmp/offsitebuddy-rest-rotation-alice-source
       - name: to_bob
         repository: >-
-          {{ 'rest:http://bob:' ~ (rotation_bob_password | urlencode)
+          {{ 'rest:http://bob:' ~ (rotation_bob_password | urlencode |
+          replace('/', '%2F'))
           ~ '@unit.invalid:8100/' }}
         password: rotation-bob-restic-sentinel
         init_if_missing: false

@@ -8,4 +8,8 @@ args=(check)
 args+=(--read-data)
 {% endif %}
 
-docker compose --project-directory "$job_dir" run --rm restic "${args[@]}"
+docker compose \
+  --project-name "offsitebuddy-client-{{ job.name }}" \
+  --project-directory "$job_dir" \
+  -f "$job_dir/compose.yaml" \
+  run --rm restic "${args[@]}"

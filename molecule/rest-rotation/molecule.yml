@@ -19,6 +19,7 @@ provisioner:
       remote_tmp: /tmp
   playbooks:
     cleanup: cleanup.yml
+    prepare: prepare.yml
     converge: converge.yml
     side_effect: side_effect.yml
 verifier:
@@ -28,6 +29,7 @@ scenario:
     - cleanup
     - destroy
     - create
+    - prepare
     - converge
     - side_effect
     - verify

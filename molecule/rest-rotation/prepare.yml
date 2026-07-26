@@ -1,0 +1,116 @@
+---
+- name: Prove exact-name collision safety
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  environment:
+    DOCKER_HOST: >-
+      {{ lookup('env', 'MOLECULE_CLEANUP_DOCKER_HOST') |
+      default('unix:///var/run/docker.sock', true) }}
+  tasks:
+    - name: Require unused fixture name before collision regression
+      ansible.builtin.include_tasks: tasks/fixture-name-preflight.yml
+
+    - name: Exercise unowned collision with guaranteed teardown
+      block:
+        - name: Create unowned REST rotation name collision
+          community.docker.docker_container:
+            name: offsitebuddy-rest-rotation-fixture
+            image: restic/rest-server:0.14.0
+            state: present
+          register: rotation_collision_creation
+          no_log: true
+
+        - name: Verify collision creation returned its identity
+          ansible.builtin.assert:
+            that:
+              - >-
+                rotation_collision_creation.container.Id |
+                default('') | length > 0
+          no_log: true
+
+        - name: Run owned fixture cleanup
+          ansible.builtin.include_tasks: tasks/cleanup-owned-fixtures.yml
+
+        - name: Inspect unowned collision after owned cleanup
+          community.docker.docker_container_info:
+            name: offsitebuddy-rest-rotation-fixture
+          register: rotation_collision_after_cleanup
+          no_log: true
+
+        - name: Verify owned cleanup preserved the unowned collision
+          ansible.builtin.assert:
+            that:
+              - rotation_collision_after_cleanup.exists
+              - >-
+                rotation_collision_after_cleanup.container.Id ==
+                rotation_collision_creation.container.Id
+              - >-
+                'offsitebuddy.rest-rotation-fixture' not in
+                (rotation_collision_after_cleanup.container.Config.Labels |
+                default({}, true))
+
+        - name: Require exact-name fixture refusal
+          block:
+            - name: Apply exact-name fixture preflight to the collision
+              ansible.builtin.include_tasks: >-
+                tasks/fixture-name-preflight.yml
+
+            - name: Fail if the unowned collision passes preflight
+              ansible.builtin.fail:
+                msg: Unowned REST rotation collision unexpectedly passed.
+          rescue:
+            - name: Verify exact-name refusal was safe and specific
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    ansible_failed_task.name is search(
+                      'Refuse to replace an existing REST rotation fixture'
+                    )
+                  - >-
+                    ansible_failed_result.msg is search(
+                      'already exists on the Docker daemon'
+                    )
+
+        - name: Inspect unowned collision after exact-name refusal
+          community.docker.docker_container_info:
+            name: offsitebuddy-rest-rotation-fixture
+          register: rotation_collision_after_refusal
+          no_log: true
+
+        - name: Verify exact-name refusal preserved the unowned collision
+          ansible.builtin.assert:
+            that:
+              - rotation_collision_after_refusal.exists
+              - >-
+                rotation_collision_after_refusal.container.Id ==
+                rotation_collision_creation.container.Id
+              - >-
+                'offsitebuddy.rest-rotation-fixture' not in
+                (rotation_collision_after_refusal.container.Config.Labels |
+                default({}, true))
+      always:
+        - name: Remove recorded REST rotation collision fixture
+          community.docker.docker_container:
+            name: "{{ rotation_collision_creation.container.Id }}"
+            state: absent
+            force_kill: true
+            keep_volumes: false
+          when:
+            - rotation_collision_creation is defined
+            - rotation_collision_creation.container is defined
+            - rotation_collision_creation.container.Id is defined
+          no_log: true
+
+        - name: Inspect exact fixture name after collision regression
+          community.docker.docker_container_info:
+            name: offsitebuddy-rest-rotation-fixture
+          register: rotation_collision_after_removal
+          no_log: true
+
+        - name: Verify collision regression removed its recorded fixture
+          ansible.builtin.assert:
+            that:
+              - not rotation_collision_after_removal.exists

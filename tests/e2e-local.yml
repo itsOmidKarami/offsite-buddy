@@ -147,9 +147,37 @@
         dest: "{{ offsitebuddy_e2e_source }}/third-only.txt"
         mode: "0644"
 
+    - name: Reject hostile Compose project without explicit identity
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-directory
+          - "{{ offsitebuddy_e2e_job_root }}"
+          - -f
+          - "{{ offsitebuddy_e2e_job_root }}/compose.yaml"
+          - config
+          - --quiet
+      environment:
+        COMPOSE_PROJECT_NAME: invalid/offsitebuddy-e2e
+      register: offsitebuddy_e2e_hostile_project
+      changed_when: false
+      failed_when: false
+
+    - name: Assert hostile Compose project is discriminating
+      ansible.builtin.assert:
+        that:
+          - offsitebuddy_e2e_hostile_project.rc != 0
+          - >-
+            offsitebuddy_e2e_hostile_project.stderr is search(
+              'invalid project name'
+            )
+
     - name: Create second snapshot
       ansible.builtin.command:
         cmd: "{{ offsitebuddy_e2e_job_root }}/backup.sh"
+      environment:
+        COMPOSE_PROJECT_NAME: invalid/offsitebuddy-e2e
       changed_when: false
 
     - name: Capture snapshot IDs
@@ -195,11 +223,15 @@
     - name: List snapshots
       ansible.builtin.command:
         cmd: "{{ offsitebuddy_e2e_job_root }}/snapshots.sh"
+      environment:
+        COMPOSE_PROJECT_NAME: invalid/offsitebuddy-e2e
       changed_when: false
 
     - name: Check repository
       ansible.builtin.command:
         cmd: "{{ offsitebuddy_e2e_job_root }}/check.sh"
+      environment:
+        COMPOSE_PROJECT_NAME: invalid/offsitebuddy-e2e
       changed_when: false
 
     - name: Reject invalid restore invocations before Docker runs
@@ -229,6 +261,8 @@
           - --snapshot
           - "{{ offsitebuddy_e2e_old_snapshot_id }}"
           - "{{ offsitebuddy_e2e_old_restore }}"
+      environment:
+        COMPOSE_PROJECT_NAME: invalid/offsitebuddy-e2e
       changed_when: false
 
     - name: Read older restored proof file
@@ -264,6 +298,8 @@
           - --include
           - "{{ offsitebuddy_e2e_source }}/second-only.txt"
           - "{{ offsitebuddy_e2e_selective_restore }}"
+      environment:
+        COMPOSE_PROJECT_NAME: invalid/offsitebuddy-e2e
       changed_when: false
 
     - name: Read selectively restored proof file
@@ -304,6 +340,8 @@
         argv:
           - "{{ offsitebuddy_e2e_job_root }}/restore-latest.sh"
           - "{{ offsitebuddy_e2e_restore }}"
+      environment:
+        COMPOSE_PROJECT_NAME: invalid/offsitebuddy-e2e
       changed_when: false
 
     - name: Read restored proof file

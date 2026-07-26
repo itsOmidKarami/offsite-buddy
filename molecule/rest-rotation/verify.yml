@@ -7,9 +7,9 @@
       {{ lookup('env', 'MOLECULE_DOCKER_HOST') |
       default('unix:///docker.sock', true) }}
   vars:
-    rotation_old_alice_password: "rotation-old:p@ss?"
-    rotation_new_alice_password: "rotation-new:p@ss?"
-    rotation_bob_password: "rotation-bob:p@ss?"
+    rotation_old_alice_password: "rotation-old:p@ss?/segment"
+    rotation_new_alice_password: "rotation-new:p@ss?/segment"
+    rotation_bob_password: "rotation-bob:p@ss?/segment"
   tasks:
     - name: Read old credential artifact checksum file
       ansible.builtin.slurp:
@@ -44,9 +44,12 @@
             from passlib.apache import HtpasswdFile;
             alice = HtpasswdFile('/srv/offsitebuddy/friends/alice/htpasswd');
             bob = HtpasswdFile('/srv/offsitebuddy/friends/bob/htpasswd');
-            assert alice.check_password('alice', 'rotation-new:p@ss?');
-            assert not alice.check_password('alice', 'rotation-old:p@ss?');
-            assert bob.check_password('bob', 'rotation-bob:p@ss?'); print('ok')
+            assert alice.check_password('alice',
+            'rotation-new:p@ss?/segment');
+            assert not alice.check_password('alice',
+            'rotation-old:p@ss?/segment');
+            assert bob.check_password('bob',
+            'rotation-bob:p@ss?/segment'); print('ok')
       changed_when: false
       register: rotation_htpasswd_check
       no_log: true
@@ -64,9 +67,7 @@
         url_username: alice
         url_password: "{{ rotation_new_alice_password }}"
         force_basic_auth: true
-        status_code: 401
-      register: new_alice_fixture_auth
-      failed_when: false
+        status_code: 405
       no_log: true
 
     - name: Check old Alice credential is rejected by fixture
@@ -77,17 +78,6 @@
         url_password: "{{ rotation_old_alice_password }}"
         force_basic_auth: true
         status_code: 401
-      register: old_alice_fixture_auth
-      no_log: true
-
-    - name: Assert new Alice credential is accepted by fixture
-      ansible.builtin.assert:
-        that: new_alice_fixture_auth.status != 401
-      no_log: true
-
-    - name: Assert old Alice credential is rejected by fixture
-      ansible.builtin.assert:
-        that: old_alice_fixture_auth.status == 401
       no_log: true
 
     - name: Read final Alice client environment
@@ -96,14 +86,25 @@
       register: final_alice_env
       no_log: true
 
-    - name: Assert Alice environment uses only encoded new credential
+    - name: Assert Alice environment uses no encoded old credential
       ansible.builtin.assert:
         that:
           - >-
-            'rotation-new%3Ap%40ss%3F' in
+            (rotation_new_alice_password | urlencode |
+            replace('/', '%2F')) in
             (final_alice_env.content | b64decode)
           - >-
-            'rotation-new:p@ss?' not in
+            (rotation_old_alice_password | urlencode |
+            replace('/', '%2F')) not in
+            (final_alice_env.content | b64decode)
+          - >-
+            rotation_new_alice_password not in
+            (final_alice_env.content | b64decode)
+          - >-
+            rotation_old_alice_password not in
+            (final_alice_env.content | b64decode)
+          - >-
+            '%2F' in
             (final_alice_env.content | b64decode)
       no_log: true
 

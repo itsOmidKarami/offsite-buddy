@@ -104,6 +104,38 @@ def main():
         assert expected in backup, "heartbeat %s URL must be shell-quoted" % field
     assert "redacted" in backup, "heartbeat failure logs must not expose URLs"
 
+    helper_templates = (
+        "backup.sh.j2",
+        "check.sh.j2",
+        "init.sh.j2",
+        "restore.sh.j2",
+        "snapshots.sh.j2",
+        "stats.sh.j2",
+    )
+    for helper_name in helper_templates:
+        helper = read("roles/client/templates/%s" % helper_name)
+        helper_lines = helper.splitlines()
+        compose_invocations = []
+        for line_index, line in enumerate(helper_lines):
+            if "docker compose" not in line:
+                continue
+            invocation_lines = [line]
+            while invocation_lines[-1].rstrip().endswith("\\"):
+                line_index += 1
+                invocation_lines.append(helper_lines[line_index])
+            compose_invocations.append("\n".join(invocation_lines))
+        assert compose_invocations, "%s must invoke Compose" % helper_name
+        for invocation in compose_invocations:
+            for identity_flag in (
+                '--project-name "offsitebuddy-client-{{ job.name }}"',
+                '--project-directory "$job_dir"',
+                '-f "$job_dir/compose.yaml"',
+            ):
+                assert identity_flag in invocation, (
+                    "%s Compose invocation must pin %s"
+                    % (helper_name, identity_flag)
+                )
+
     validate = read("roles/client/tasks/validate.yml")
     for snippet in (
         "regex_search('^([01][0-9]|2[0-3]):[0-5][0-9]$')",
@@ -207,6 +239,178 @@ def main():
         "previously enabled",
     ):
         assert text in rest_rotation, "REST rotation docs missing: %s" % text
+    rest_rotation_flat = " ".join(rest_rotation.split())
+    for text in (
+        "every server and matching client convergence",
+        "both cutover and rollback",
+        "offsitebuddy_start_services: false",
+        "offsitebuddy_cleanup_stale: false",
+        "do not rely on role defaults",
+        "verify writers remain paused after every convergence",
+        "forward client-side gates",
+        "forward server-side runtime check",
+        "rollback client-side gates",
+        "rollback server-side runtime check",
+        "recorded private restore targets",
+        "rollback_restore",
+        "urlencode | replace('/', '%2f')",
+    ):
+        assert text in rest_rotation_flat, (
+            "REST rotation docs missing safe convergence detail: %s" % text
+        )
+    assert rest_rotation.count("restart rest-server") >= 2
+    assert rest_rotation.count(
+        "docker compose --project-name offsitebuddy-friend-alice"
+    ) >= 4
+    assert 'rm -rf -- "$preflight_restore" "$cutover_restore"' in rest_rotation
+    assert 'rm -rf -- "$rollback_restore"' in rest_rotation
+
+    backup_client_example = read("examples/group_vars/backup_clients.yml")
+    assert backup_client_example.count("replace('/', '%2F')") == 2, (
+        "every canonical REST repository example must encode slash as %2F"
+    )
+
+    rotation_molecule = read("molecule/rest-rotation/molecule.yml")
+    rotation_cleanup = read("molecule/rest-rotation/cleanup.yml")
+    rotation_cleanup_tasks = read(
+        "molecule/rest-rotation/tasks/cleanup-owned-fixtures.yml"
+    )
+    rotation_prepare = read("molecule/rest-rotation/prepare.yml")
+    rotation_preflight = read(
+        "molecule/rest-rotation/tasks/fixture-name-preflight.yml"
+    )
+    rotation_converge = read("molecule/rest-rotation/converge.yml")
+    rotation_side_effect = read("molecule/rest-rotation/side_effect.yml")
+    rotation_verify = read("molecule/rest-rotation/verify.yml")
+    assert "prepare: prepare.yml" in rotation_molecule
+    assert "    - prepare\n" in rotation_molecule
+    assert "community.docker.docker_container_info" in rotation_preflight
+    assert "not rotation_fixture_name_inspection.exists" in rotation_preflight
+    preflight_inspection = rotation_preflight.split(
+        "- name: Inspect exact REST rotation fixture name", 1
+    )[1].split("- name:", 1)[0]
+    assert "no_log: true" in preflight_inspection
+    assert (
+        rotation_converge.index("tasks/fixture-name-preflight.yml")
+        < rotation_converge.index("Create stopped REST rotation fixture")
+    )
+    assert (
+        "ansible.builtin.include_tasks: tasks/cleanup-owned-fixtures.yml"
+        in rotation_cleanup
+    )
+    prepare_tasks = yaml.safe_load(rotation_prepare)[0]["tasks"]
+    collision_lifecycle = next(
+        task
+        for task in prepare_tasks
+        if task["name"]
+        == "Exercise unowned collision with guaranteed teardown"
+    )
+    collision_block = collision_lifecycle["block"]
+    collision_always = collision_lifecycle["always"]
+    collision_block_names = [task["name"] for task in collision_block]
+    assert collision_block_names.index(
+        "Create unowned REST rotation name collision"
+    ) < collision_block_names.index("Run owned fixture cleanup")
+    owned_cleanup = next(
+        task
+        for task in collision_block
+        if task["name"] == "Run owned fixture cleanup"
+    )
+    assert (
+        owned_cleanup["ansible.builtin.include_tasks"]
+        == "tasks/cleanup-owned-fixtures.yml"
+    )
+    recorded_removal = next(
+        task
+        for task in collision_always
+        if task["name"] == "Remove recorded REST rotation collision fixture"
+    )
+    assert (
+        recorded_removal["community.docker.docker_container"]["name"]
+        == "{{ rotation_collision_creation.container.Id }}"
+    )
+    assert recorded_removal.get("no_log") is True
+    for text in (
+        "Create unowned REST rotation name collision",
+        "Verify owned cleanup preserved the unowned collision",
+        "Require exact-name fixture refusal",
+        "Verify exact-name refusal preserved the unowned collision",
+        "Remove recorded REST rotation collision fixture",
+    ):
+        assert text in rotation_prepare
+    collision_creation = rotation_prepare.split(
+        "- name: Create unowned REST rotation name collision", 1
+    )[1].split("- name:", 1)[0]
+    assert 'offsitebuddy.rest-rotation-fixture: "true"' not in collision_creation
+    assert (
+        "label: offsitebuddy.rest-rotation-fixture=true"
+        in rotation_cleanup_tasks
+    )
+    assert "name: offsitebuddy-rest-rotation-fixture" not in (
+        rotation_cleanup + rotation_cleanup_tasks
+    )
+    assert "failed_when: false" not in rotation_cleanup
+    assert "failed_when: false" not in rotation_converge
+    assert "failed_when: false" not in rotation_verify
+    assert rotation_converge.count("status_code: 405") == 1
+    assert rotation_converge.count("status_code: 401") == 1
+    assert rotation_verify.count("status_code: 405") == 1
+    assert rotation_verify.count("status_code: 401") == 1
+    assert rotation_converge.count("replace('/', '%2F')") >= 4
+    assert rotation_side_effect.count("replace('/', '%2F')") == 2
+    assert "%2F" in rotation_verify
+    assert "encoded old credential" in rotation_verify
+    for playbook, task_names in (
+        (
+            rotation_converge,
+            (
+                "Assert initial credentials encode slash without raw values",
+                "Check old Alice credential against fixture",
+                "Check future Alice credential against fixture",
+            ),
+        ),
+        (
+            rotation_verify,
+            (
+                "Verify final htpasswd credentials",
+                "Assert final htpasswd check passed",
+                "Check new Alice credential against fixture",
+                "Check old Alice credential is rejected by fixture",
+                "Assert Alice environment uses no encoded old credential",
+                "Assert Alice changed and Bob remained unchanged",
+            ),
+        ),
+    ):
+        task_defs = {
+            task["name"]: task for task in yaml.safe_load(playbook)[0]["tasks"]
+        }
+        for task_name in task_names:
+            assert task_defs[task_name].get("no_log") is True
+    for playbook, password_vars in (
+        (
+            rotation_converge,
+            (
+                "rotation_old_alice_password",
+                "rotation_new_alice_password",
+                "rotation_bob_password",
+            ),
+        ),
+        (
+            rotation_side_effect,
+            ("rotation_new_alice_password", "rotation_bob_password"),
+        ),
+        (
+            rotation_verify,
+            (
+                "rotation_old_alice_password",
+                "rotation_new_alice_password",
+                "rotation_bob_password",
+            ),
+        ),
+    ):
+        rotation_vars = yaml.safe_load(playbook)[0]["vars"]
+        for password_var in password_vars:
+            assert "/" in rotation_vars[password_var]
 
     workflow = read(".github/workflows/ci.yml")
     assert "uv run molecule test -s rest-rotation --no-report" in workflow
@@ -1030,6 +1234,41 @@ def main():
         "--include",
     ):
         assert snippet in e2e, "missing e2e backup/restore check: %s" % snippet
+    hostile_helper_tasks = {
+        "Create second snapshot",
+        "List snapshots",
+        "Check repository",
+        "Restore older snapshot",
+        "Restore only proof file from latest snapshot",
+        "Restore latest snapshot",
+    }
+    e2e_post_tasks = yaml.safe_load(e2e)[0]["post_tasks"]
+    hostile_probe = next(
+        task
+        for task in e2e_post_tasks
+        if task["name"]
+        == "Reject hostile Compose project without explicit identity"
+    )
+    assert (
+        hostile_probe["environment"]["COMPOSE_PROJECT_NAME"]
+        == "invalid/offsitebuddy-e2e"
+    )
+    hostile_probe_assertion = next(
+        task
+        for task in e2e_post_tasks
+        if task["name"] == "Assert hostile Compose project is discriminating"
+    )
+    assert "offsitebuddy_e2e_hostile_project.rc != 0" in str(
+        hostile_probe_assertion["ansible.builtin.assert"]["that"]
+    )
+    hostile_helper_coverage = {
+        task["name"]
+        for task in e2e_post_tasks
+        if task["name"] in hostile_helper_tasks
+        and task.get("environment", {}).get("COMPOSE_PROJECT_NAME")
+        == "invalid/offsitebuddy-e2e"
+    }
+    assert hostile_helper_coverage == hostile_helper_tasks
 
     assert not (ROOT / ".superpowers/sdd/task-5-report.md").exists(), (
         "internal .superpowers report should not be tracked"

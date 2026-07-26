@@ -1,0 +1,21 @@
+---
+- name: Find owned REST rotation fixtures
+  community.docker.docker_host_info:
+    containers: true
+    containers_all: true
+    containers_filters:
+      label: offsitebuddy.rest-rotation-fixture=true
+  register: rotation_fixtures
+  no_log: true
+
+- name: Remove owned REST rotation fixtures and volumes
+  community.docker.docker_container:
+    name: "{{ rotation_fixture.Id }}"
+    state: absent
+    force_kill: true
+    keep_volumes: false
+  loop: "{{ rotation_fixtures.containers }}"
+  loop_control:
+    loop_var: rotation_fixture
+    label: owned REST rotation fixture
+  no_log: true
