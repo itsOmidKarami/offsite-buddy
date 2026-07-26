@@ -12,3 +12,6 @@ quota:
 ```
 
 OffsiteBuddy verifies the path exists and is writable. It cannot prove the UGOS UI quota is active, so `enforced: true` is an explicit admin assertion.
+
+The write probe proves current writability only. It does not prove the
+configured numeric quota or future capacity.
