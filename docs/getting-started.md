@@ -29,6 +29,13 @@
 
 OffsiteBuddy does not make an untested backup safe. Restore from the repo before trusting it.
 
+## Security maintenance
+
+Use the reviewed [REST server credential rotation workflow](rest-server-credential-rotation.md)
+when rotating a friend's REST password. It inventories all affected hosts,
+pauses writers, validates both cutover and rollback, and preserves prior timer
+state.
+
 ## Timer behavior
 
 A missed `Persistent=true` timer can run after boot. Backup starts are delayed by

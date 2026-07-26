@@ -191,6 +191,26 @@ def main():
     assert "offsitebuddy_server_root" in docs
     assert "offsitebuddy_client_root" in docs
 
+    rest_rotation = read("docs/rest-server-credential-rotation.md").lower()
+    for text in (
+        "every backup and check job",
+        "including jobs on other hosts",
+        "old secret",
+        "no_log",
+        "offsitebuddy-friend-alice",
+        "restart rest-server",
+        "snapshots.sh",
+        "check.sh",
+        "backup.sh",
+        "restore-latest.sh",
+        "rollback",
+        "previously enabled",
+    ):
+        assert text in rest_rotation, "REST rotation docs missing: %s" % text
+
+    workflow = read(".github/workflows/ci.yml")
+    assert "uv run molecule test -s rest-rotation --no-report" in workflow
+
     quota_recovery_docs = read("docs/quota-full-recovery.md").lower()
     for text in (
         "enforced: true",
