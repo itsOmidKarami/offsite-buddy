@@ -1,7 +1,7 @@
 ---
 - name: Inspect exact REST rotation fixture name
   community.docker.docker_container_info:
-    name: offsitebuddy-rest-rotation-fixture
+    name: "{{ rotation_fixture_name }}"
   register: rotation_fixture_name_inspection
   no_log: true
 
@@ -10,5 +10,5 @@
     that:
       - not rotation_fixture_name_inspection.exists
     fail_msg: >-
-      REST rotation fixture name already exists on the Docker daemon;
-      refusing to alter it.
+      REST rotation fixture {{ rotation_fixture_name }} already exists on the
+      Docker daemon; refusing to alter it.

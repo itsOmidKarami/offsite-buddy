@@ -42,7 +42,7 @@
         repository: >-
           {{ 'rest:http://alice:' ~ (rotation_new_alice_password | urlencode |
           replace('/', '%2F'))
-          ~ '@unit.invalid:8000/' }}
+          ~ '@127.0.0.1:18080/' }}
         password: rotation-alice-restic-sentinel
         init_if_missing: false
         run_initial_backup: false
@@ -53,7 +53,7 @@
         repository: >-
           {{ 'rest:http://bob:' ~ (rotation_bob_password | urlencode |
           replace('/', '%2F'))
-          ~ '@unit.invalid:8100/' }}
+          ~ '@127.0.0.1:18081/' }}
         password: rotation-bob-restic-sentinel
         init_if_missing: false
         run_initial_backup: false

@@ -80,6 +80,73 @@
         status_code: 401
       no_log: true
 
+    - name: Check unchanged Bob credential against live fixture
+      ansible.builtin.uri:
+        url: http://127.0.0.1:18081/
+        method: OPTIONS
+        url_username: bob
+        url_password: "{{ rotation_bob_password }}"
+        force_basic_auth: true
+        status_code: 405
+      no_log: true
+
+    - name: Check rotated Alice repository through rendered client URL
+      ansible.builtin.command:
+        argv:
+          - docker
+          - run
+          - --rm
+          - --network
+          - container:offsitebuddy-rest-rotation
+          - --env-file
+          - /etc/offsitebuddy/jobs/to_alice/.env
+          - --env
+          - RESTIC_PASSWORD_FILE=
+          - --env
+          - RESTIC_PASSWORD=rotation-alice-restic-sentinel
+          - restic/restic:0.19.0
+          - snapshots
+      changed_when: false
+      no_log: true
+
+    - name: Require old rendered Alice client URL rejection
+      block:
+        - name: Try old rendered Alice client URL after cutover
+          ansible.builtin.command:
+            argv:
+              - docker
+              - run
+              - --rm
+              - --network
+              - container:offsitebuddy-rest-rotation
+              - --env-file
+              - /tmp/offsitebuddy-rest-rotation-alice-old.env
+              - --env
+              - RESTIC_PASSWORD_FILE=
+              - --env
+              - RESTIC_PASSWORD=rotation-alice-restic-sentinel
+              - restic/restic:0.19.0
+              - snapshots
+          changed_when: false
+          no_log: true
+
+        - name: Fail if old rendered Alice client URL still authenticates
+          ansible.builtin.fail:
+            msg: Old rendered Alice client URL unexpectedly authenticated.
+      rescue:
+        - name: Verify old rendered Alice client URL failed authentication
+          ansible.builtin.assert:
+            that:
+              - >-
+                ansible_failed_task.name is search(
+                  'Try old rendered Alice client URL'
+                )
+              - >-
+                ((ansible_failed_result.stdout | default('')) ~
+                (ansible_failed_result.stderr | default(''))) | lower is
+                search('401|unauthorized')
+          no_log: true
+
     - name: Read final Alice client environment
       ansible.builtin.slurp:
         path: /etc/offsitebuddy/jobs/to_alice/.env

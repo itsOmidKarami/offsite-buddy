@@ -5,6 +5,7 @@
   gather_facts: false
   vars:
     ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    rotation_fixture_name: offsitebuddy-rest-rotation-fixture
   environment:
     DOCKER_HOST: >-
       {{ lookup('env', 'MOLECULE_CLEANUP_DOCKER_HOST') |

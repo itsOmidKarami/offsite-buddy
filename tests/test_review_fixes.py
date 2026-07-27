@@ -352,9 +352,9 @@ def main():
     assert "failed_when: false" not in rotation_cleanup
     assert "failed_when: false" not in rotation_converge
     assert "failed_when: false" not in rotation_verify
-    assert rotation_converge.count("status_code: 405") == 1
+    assert rotation_converge.count("status_code: 405") == 2
     assert rotation_converge.count("status_code: 401") == 1
-    assert rotation_verify.count("status_code: 405") == 1
+    assert rotation_verify.count("status_code: 405") == 2
     assert rotation_verify.count("status_code: 401") == 1
     assert rotation_converge.count("replace('/', '%2F')") >= 4
     assert rotation_side_effect.count("replace('/', '%2F')") == 2
