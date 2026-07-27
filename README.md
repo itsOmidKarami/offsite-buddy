@@ -2,7 +2,7 @@
 
 OffsiteBuddy is an Ansible Galaxy collection for friend-to-friend off-site NAS backups.
 
-The v0.1 stack uses restic on the client side, rest-server on the storage side, Docker Compose, Tailscale sidecar containers, one append-only repository per friend, and hard quota-backed storage paths.
+The v1 stack uses restic on the client side, rest-server on the storage side, Docker Compose, Tailscale sidecar containers, one append-only repository per friend, and hard quota-backed storage paths.
 
 ## Quick Start
 
