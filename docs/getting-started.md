@@ -36,6 +36,11 @@ when rotating a friend's REST password. It inventories all affected hosts,
 pauses writers, validates both cutover and rollback, and preserves prior timer
 state.
 
+Use the reviewed [restic repository-key rotation workflow](restic-key-rotation.md)
+when changing a job's repository password. It adds and proves the new key
+before cutover, keeps the old key for rollback, and retires that exact key only
+in a later append-only maintenance window.
+
 ## Timer behavior
 
 A missed `Persistent=true` timer can run after boot. Backup starts are delayed by

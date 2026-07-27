@@ -1,0 +1,618 @@
+---
+- name: Exercise restic key rotation lifecycle
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    rotation_base: >-
+      {{ playbook_dir | dirname }}/.ansible/tmp/restic-key-rotation
+    rotation_source: "{{ rotation_base }}/source"
+    rotation_repository: "{{ rotation_base }}/repository"
+    rotation_restore: "{{ rotation_base }}/restore"
+    rotation_retirement_restore: "{{ rotation_base }}/retirement-restore"
+    rotation_job_root: "{{ rotation_base }}/jobs/restic_key_rotation"
+    rotation_old_password_file: "{{ rotation_base }}/old-password"
+    rotation_new_password_file: "{{ rotation_base }}/new-password"
+    offsitebuddy_client_root: "{{ rotation_base }}/jobs"
+    offsitebuddy_client_owner: "{{ lookup('pipe', 'id -un') }}"
+    offsitebuddy_client_group: "{{ lookup('pipe', 'id -gn') }}"
+    offsitebuddy_manage_systemd: false
+    offsitebuddy_cleanup_stale: false
+    offsitebuddy_start_services: true
+    offsitebuddy_client_jobs:
+      - name: restic_key_rotation
+        repository: "{{ rotation_repository }}"
+        password: rotation-old-password
+        init_if_missing: true
+        run_initial_backup: true
+        schedule: "03:30"
+        backup_paths:
+          - "{{ rotation_source }}"
+        check:
+          enabled: false
+  pre_tasks:
+    - name: Detect local restic key rotation host OS
+      ansible.builtin.command:
+        cmd: uname -s
+      register: rotation_uname
+      changed_when: false
+
+    - name: Skip Docker Desktop macOS bind-mount restic smoke
+      ansible.builtin.meta: end_play
+      when: rotation_uname.stdout == 'Darwin'
+
+    - name: Reset restic key rotation workspace
+      ansible.builtin.file:
+        path: "{{ rotation_base }}"
+        state: absent
+
+    - name: Create restic key rotation directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ rotation_source }}"
+        - "{{ rotation_repository }}"
+        - "{{ rotation_restore }}"
+        - "{{ rotation_retirement_restore }}"
+
+    - name: Write restic key rotation proof file
+      ansible.builtin.copy:
+        content: "restic key rotation initial proof\n"
+        dest: "{{ rotation_source }}/proof.txt"
+        mode: "0644"
+  roles:
+    - role: client
+  post_tasks:
+    - name: List initial repository keys
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-client-restic_key_rotation
+          - --project-directory
+          - "{{ rotation_job_root }}"
+          - -f
+          - "{{ rotation_job_root }}/compose.yaml"
+          - run
+          - --rm
+          - restic
+          - --json
+          - key
+          - list
+      register: rotation_initial_keys
+      changed_when: false
+      no_log: true
+
+    - name: Store initial repository keys
+      ansible.builtin.set_fact:
+        rotation_initial_keys: "{{ rotation_initial_keys.stdout | from_json }}"
+      no_log: true
+
+    - name: Require one initial current key
+      ansible.builtin.assert:
+        that:
+          - rotation_initial_keys | length == 1
+          - >-
+            rotation_initial_keys | selectattr('current', 'equalto', true) |
+            map(attribute='id') | list | length == 1
+      no_log: true
+
+    - name: Capture initial current key ID
+      ansible.builtin.set_fact:
+        rotation_old_key_id: >-
+          {{ rotation_initial_keys | selectattr('current', 'equalto', true) |
+             map(attribute='id') | list | first }}
+      no_log: true
+
+    - name: Write new restic key password file
+      ansible.builtin.copy:
+        content: "rotation-new-password\n"
+        dest: "{{ rotation_new_password_file }}"
+        mode: "0600"
+      no_log: true
+
+    - name: Add new repository key with old rendered password
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-client-restic_key_rotation
+          - --project-directory
+          - "{{ rotation_job_root }}"
+          - -f
+          - "{{ rotation_job_root }}/compose.yaml"
+          - run
+          - --rm
+          - -v
+          - >-
+            {{ rotation_new_password_file }}:/run/secrets/restic-new-password:ro
+          - restic
+          - key
+          - add
+          - --new-password-file
+          - /run/secrets/restic-new-password
+      changed_when: false
+      no_log: true
+
+    - name: List repository keys with old rendered password
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-client-restic_key_rotation
+          - --project-directory
+          - "{{ rotation_job_root }}"
+          - -f
+          - "{{ rotation_job_root }}/compose.yaml"
+          - run
+          - --rm
+          - restic
+          - --json
+          - key
+          - list
+      register: rotation_keys_after_add_result
+      changed_when: false
+      no_log: true
+
+    - name: Store repository keys after addition
+      ansible.builtin.set_fact:
+        rotation_keys_after_add: >-
+          {{ rotation_keys_after_add_result.stdout | from_json }}
+      no_log: true
+
+    - name: Require two keys with the old key still current
+      ansible.builtin.assert:
+        that:
+          - rotation_keys_after_add | length == 2
+          - >-
+            rotation_keys_after_add | map(attribute='id') | unique | list |
+            length == 2
+          - >-
+            rotation_keys_after_add | selectattr('current', 'equalto', true) |
+            map(attribute='id') | list == [rotation_old_key_id]
+      no_log: true
+
+    - name: Capture new repository key ID
+      ansible.builtin.set_fact:
+        rotation_new_key_id: >-
+          {{ rotation_keys_after_add |
+             rejectattr('id', 'equalto', rotation_old_key_id) |
+             map(attribute='id') | list | first }}
+      no_log: true
+
+    - name: Prove new key opens existing repository
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-client-restic_key_rotation
+          - --project-directory
+          - "{{ rotation_job_root }}"
+          - -f
+          - "{{ rotation_job_root }}/compose.yaml"
+          - run
+          - --rm
+          - -v
+          - >-
+            {{ rotation_new_password_file }}:/run/secrets/restic-new-password:ro
+          - restic
+          - --password-file
+          - /run/secrets/restic-new-password
+          - snapshots
+      changed_when: false
+      no_log: true
+
+    - name: Save original rendered password before cutover
+      ansible.builtin.copy:
+        src: "{{ rotation_job_root }}/password"
+        dest: "{{ rotation_old_password_file }}"
+        mode: "0600"
+        remote_src: true
+      no_log: true
+
+    - name: Cut over rendered client to new repository key
+      ansible.builtin.include_role:
+        name: client
+      vars:
+        offsitebuddy_start_services: false
+        offsitebuddy_cleanup_stale: false
+        offsitebuddy_client_jobs:
+          - name: restic_key_rotation
+            repository: "{{ rotation_repository }}"
+            password: rotation-new-password
+            init_if_missing: true
+            run_initial_backup: true
+            schedule: "03:30"
+            backup_paths:
+              - "{{ rotation_source }}"
+            check:
+              enabled: false
+
+    - name: List snapshots through cutover helper
+      ansible.builtin.command:
+        cmd: "{{ rotation_job_root }}/snapshots.sh"
+      environment:
+        COMPOSE_PROJECT_NAME: invalid/offsitebuddy-restic-key-rotation
+      changed_when: false
+
+    - name: Check repository through cutover helper
+      ansible.builtin.command:
+        cmd: "{{ rotation_job_root }}/check.sh"
+      environment:
+        COMPOSE_PROJECT_NAME: invalid/offsitebuddy-restic-key-rotation
+      changed_when: false
+
+    - name: Capture snapshot IDs before cutover backup
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-client-restic_key_rotation
+          - --project-directory
+          - "{{ rotation_job_root }}"
+          - -f
+          - "{{ rotation_job_root }}/compose.yaml"
+          - run
+          - --rm
+          - restic
+          - snapshots
+          - --json
+      register: rotation_snapshots_before_backup_result
+      changed_when: false
+
+    - name: Store snapshot IDs before cutover backup
+      ansible.builtin.set_fact:
+        rotation_snapshot_ids_before_backup: >-
+          {{ rotation_snapshots_before_backup_result.stdout | from_json |
+             map(attribute='id') | list }}
+
+    - name: Update proof file for cutover backup
+      ansible.builtin.copy:
+        content: "restic key rotation cutover proof\n"
+        dest: "{{ rotation_source }}/proof.txt"
+        mode: "0644"
+
+    - name: Back up through cutover helper
+      ansible.builtin.command:
+        cmd: "{{ rotation_job_root }}/backup.sh"
+      environment:
+        COMPOSE_PROJECT_NAME: invalid/offsitebuddy-restic-key-rotation
+      changed_when: false
+
+    - name: Capture snapshot IDs after cutover backup
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-client-restic_key_rotation
+          - --project-directory
+          - "{{ rotation_job_root }}"
+          - -f
+          - "{{ rotation_job_root }}/compose.yaml"
+          - run
+          - --rm
+          - restic
+          - snapshots
+          - --json
+      register: rotation_snapshots_after_backup_result
+      changed_when: false
+
+    - name: Store snapshot IDs after cutover backup
+      ansible.builtin.set_fact:
+        rotation_snapshot_ids_after_backup: >-
+          {{ rotation_snapshots_after_backup_result.stdout | from_json |
+             map(attribute='id') | list }}
+
+    - name: Require cutover backup creates one new snapshot
+      ansible.builtin.assert:
+        that:
+          - >-
+            rotation_snapshot_ids_after_backup | difference(
+            rotation_snapshot_ids_before_backup) | length == 1
+
+    - name: Restore cutover backup through generated helper
+      ansible.builtin.command:
+        argv:
+          - "{{ rotation_job_root }}/restore-latest.sh"
+          - "{{ rotation_restore }}"
+      environment:
+        COMPOSE_PROJECT_NAME: invalid/offsitebuddy-restic-key-rotation
+      changed_when: false
+
+    - name: Read cutover restored proof file
+      ansible.builtin.slurp:
+        path: "{{ rotation_restore }}{{ rotation_source }}/proof.txt"
+      register: rotation_cutover_restored_proof
+
+    - name: Assert cutover restored proof file content
+      ansible.builtin.assert:
+        that:
+          - >-
+            rotation_cutover_restored_proof.content | b64decode ==
+            'restic key rotation cutover proof\n'
+
+    - name: Prove old key still opens repository after cutover
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-client-restic_key_rotation
+          - --project-directory
+          - "{{ rotation_job_root }}"
+          - -f
+          - "{{ rotation_job_root }}/compose.yaml"
+          - run
+          - --rm
+          - -v
+          - >-
+            {{ rotation_old_password_file }}:/run/secrets/restic-old-password:ro
+          - restic
+          - --password-file
+          - /run/secrets/restic-old-password
+          - snapshots
+      changed_when: false
+      no_log: true
+
+    - name: List repository keys with new rendered password
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-client-restic_key_rotation
+          - --project-directory
+          - "{{ rotation_job_root }}"
+          - -f
+          - "{{ rotation_job_root }}/compose.yaml"
+          - run
+          - --rm
+          - restic
+          - --json
+          - key
+          - list
+      register: rotation_keys_before_retirement_result
+      changed_when: false
+      no_log: true
+
+    - name: Store repository keys before retirement
+      ansible.builtin.set_fact:
+        rotation_keys_before_retirement: >-
+          {{ rotation_keys_before_retirement_result.stdout | from_json }}
+      no_log: true
+
+    - name: Require new key is current before retirement
+      ansible.builtin.assert:
+        that:
+          - rotation_keys_before_retirement | length == 2
+          - >-
+            rotation_keys_before_retirement |
+            selectattr('current', 'equalto', true) | map(attribute='id') |
+            list == [rotation_new_key_id]
+          - >-
+            rotation_old_key_id in (
+            rotation_keys_before_retirement | map(attribute='id') | list)
+      no_log: true
+
+    - name: Refuse retirement of current repository key
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-client-restic_key_rotation
+          - --project-directory
+          - "{{ rotation_job_root }}"
+          - -f
+          - "{{ rotation_job_root }}/compose.yaml"
+          - run
+          - --rm
+          - restic
+          - key
+          - remove
+          - "{{ rotation_new_key_id }}"
+      register: rotation_current_key_removal
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Require current repository key retirement is rejected
+      ansible.builtin.assert:
+        that:
+          - rotation_current_key_removal.rc == 1
+          - >-
+            'Fatal: refusing to remove key currently used to access repository'
+            in rotation_current_key_removal.stderr
+      no_log: true
+
+    - name: List repository keys after current key retirement refusal
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-client-restic_key_rotation
+          - --project-directory
+          - "{{ rotation_job_root }}"
+          - -f
+          - "{{ rotation_job_root }}/compose.yaml"
+          - run
+          - --rm
+          - restic
+          - --json
+          - key
+          - list
+      register: rotation_keys_after_current_key_removal_result
+      changed_when: false
+      no_log: true
+
+    - name: Store repository keys after current key retirement refusal
+      ansible.builtin.set_fact:
+        rotation_keys_after_current_key_removal: >-
+          {{ rotation_keys_after_current_key_removal_result.stdout |
+             from_json }}
+      no_log: true
+
+    - name: Require repository keys remain unchanged after current key refusal
+      ansible.builtin.assert:
+        that:
+          - rotation_keys_after_current_key_removal | length == 2
+          - >-
+            rotation_keys_after_current_key_removal | map(attribute='id') |
+            sort | list == [rotation_old_key_id, rotation_new_key_id] | sort
+          - >-
+            rotation_keys_after_current_key_removal |
+            selectattr('current', 'equalto', true) | map(attribute='id') |
+            list == [rotation_new_key_id]
+      no_log: true
+
+    - name: Retire only captured old repository key
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-client-restic_key_rotation
+          - --project-directory
+          - "{{ rotation_job_root }}"
+          - -f
+          - "{{ rotation_job_root }}/compose.yaml"
+          - run
+          - --rm
+          - restic
+          - key
+          - remove
+          - "{{ rotation_old_key_id }}"
+      changed_when: false
+      no_log: true
+
+    - name: List repository keys after retirement
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-client-restic_key_rotation
+          - --project-directory
+          - "{{ rotation_job_root }}"
+          - -f
+          - "{{ rotation_job_root }}/compose.yaml"
+          - run
+          - --rm
+          - restic
+          - --json
+          - key
+          - list
+      register: rotation_keys_after_retirement_result
+      changed_when: false
+      no_log: true
+
+    - name: Store repository keys after retirement
+      ansible.builtin.set_fact:
+        rotation_keys_after_retirement: >-
+          {{ rotation_keys_after_retirement_result.stdout | from_json }}
+      no_log: true
+
+    - name: Require only new repository key remains current
+      ansible.builtin.assert:
+        that:
+          - rotation_keys_after_retirement | length == 1
+          - >-
+            rotation_keys_after_retirement | map(attribute='id') | list ==
+            [rotation_new_key_id]
+          - >-
+            rotation_keys_after_retirement |
+            selectattr('current', 'equalto', true) | map(attribute='id') |
+            list == [rotation_new_key_id]
+      no_log: true
+
+    - name: Reject retired old repository key
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-client-restic_key_rotation
+          - --project-directory
+          - "{{ rotation_job_root }}"
+          - -f
+          - "{{ rotation_job_root }}/compose.yaml"
+          - run
+          - --rm
+          - -v
+          - >-
+            {{ rotation_old_password_file }}:/run/secrets/restic-old-password:ro
+          - restic
+          - --password-file
+          - /run/secrets/restic-old-password
+          - snapshots
+      register: rotation_retired_old_key_result
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Require retired old repository key is rejected
+      ansible.builtin.assert:
+        that:
+          - rotation_retired_old_key_result.rc == 12
+      no_log: true
+
+    - name: List snapshots after retirement through generated helper
+      ansible.builtin.command:
+        cmd: "{{ rotation_job_root }}/snapshots.sh"
+      environment:
+        COMPOSE_PROJECT_NAME: invalid/offsitebuddy-restic-key-rotation
+      changed_when: false
+
+    - name: Check repository after retirement through generated helper
+      ansible.builtin.command:
+        cmd: "{{ rotation_job_root }}/check.sh"
+      environment:
+        COMPOSE_PROJECT_NAME: invalid/offsitebuddy-restic-key-rotation
+      changed_when: false
+
+    - name: Update proof file for retirement backup
+      ansible.builtin.copy:
+        content: "restic key rotation retirement proof\n"
+        dest: "{{ rotation_source }}/proof.txt"
+        mode: "0644"
+
+    - name: Back up after retirement through generated helper
+      ansible.builtin.command:
+        cmd: "{{ rotation_job_root }}/backup.sh"
+      environment:
+        COMPOSE_PROJECT_NAME: invalid/offsitebuddy-restic-key-rotation
+      changed_when: false
+
+    - name: Restore after retirement through generated helper
+      ansible.builtin.command:
+        argv:
+          - "{{ rotation_job_root }}/restore-latest.sh"
+          - "{{ rotation_retirement_restore }}"
+      environment:
+        COMPOSE_PROJECT_NAME: invalid/offsitebuddy-restic-key-rotation
+      changed_when: false
+
+    - name: Read retirement restored proof file
+      ansible.builtin.slurp:
+        path: >-
+          {{ rotation_retirement_restore }}{{ rotation_source }}/proof.txt
+      register: rotation_retirement_restored_proof
+
+    - name: Assert retirement restored proof file content
+      ansible.builtin.assert:
+        that:
+          - >-
+            rotation_retirement_restored_proof.content | b64decode ==
+            'restic key rotation retirement proof\n'
+      no_log: true

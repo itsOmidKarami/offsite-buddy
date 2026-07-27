@@ -4,6 +4,11 @@ OffsiteBuddy does not enforce retention. It keeps the normal rest-server
 append-only. Retention is manual maintenance: use one approved window for one
 friend and its repository. Do not schedule an automatic prune.
 
+Repository-key retirement uses this same read-write maintenance endpoint, but
+is a separate reviewed operation; follow the [restic key rotation
+workflow](restic-key-rotation.md). Do not combine retention and key retirement
+in one window.
+
 The commands use friend `alice`, client job `photos_to_alice`, and the default
 roots `/srv/offsitebuddy` and `/etc/offsitebuddy/jobs`. Substitute the one
 reviewed friend/repository and the configured `offsitebuddy_server_root` and
@@ -52,6 +57,7 @@ model, for example:
 
 ```sh
 sudo docker compose --project-name offsitebuddy-client-photos_to_alice --project-directory /etc/offsitebuddy/jobs/photos_to_alice \
+  -f /etc/offsitebuddy/jobs/photos_to_alice/compose.yaml \
   run --rm restic forget --dry-run --keep-within 90d
 ```
 
@@ -75,6 +81,7 @@ password to the server:
 
 ```sh
 sudo docker compose --project-name offsitebuddy-client-photos_to_alice --project-directory /etc/offsitebuddy/jobs/photos_to_alice \
+  -f /etc/offsitebuddy/jobs/photos_to_alice/compose.yaml \
   run --rm restic forget --prune --keep-within 90d
 ```
 
