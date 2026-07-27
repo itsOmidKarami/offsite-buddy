@@ -76,6 +76,10 @@ jobs:
           tests/client-sidecar-render.yml
       - name: Run local backup restore smoke
         run: uv run ansible-playbook -i localhost, -c local tests/e2e-local.yml
+      - name: Run restic key rotation smoke
+        run: >-
+          uv run ansible-playbook -i localhost, -c local
+          tests/restic-key-rotation.yml
       - name: Run quota-full recovery smoke
         run: >-
           sudo -E "$(command -v uv)" run ansible-playbook -i localhost, -c local
