@@ -404,6 +404,75 @@
             rotation_keys_before_retirement | map(attribute='id') | list)
       no_log: true
 
+    - name: Refuse retirement of current repository key
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-client-restic_key_rotation
+          - --project-directory
+          - "{{ rotation_job_root }}"
+          - -f
+          - "{{ rotation_job_root }}/compose.yaml"
+          - run
+          - --rm
+          - restic
+          - key
+          - remove
+          - "{{ rotation_new_key_id }}"
+      register: rotation_current_key_removal
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Require current repository key retirement is rejected
+      ansible.builtin.assert:
+        that:
+          - rotation_current_key_removal.rc != 0
+      no_log: true
+
+    - name: List repository keys after current key retirement refusal
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - offsitebuddy-client-restic_key_rotation
+          - --project-directory
+          - "{{ rotation_job_root }}"
+          - -f
+          - "{{ rotation_job_root }}/compose.yaml"
+          - run
+          - --rm
+          - restic
+          - --json
+          - key
+          - list
+      register: rotation_keys_after_current_key_removal_result
+      changed_when: false
+      no_log: true
+
+    - name: Store repository keys after current key retirement refusal
+      ansible.builtin.set_fact:
+        rotation_keys_after_current_key_removal: >-
+          {{ rotation_keys_after_current_key_removal_result.stdout |
+             from_json }}
+      no_log: true
+
+    - name: Require repository keys remain unchanged after current key refusal
+      ansible.builtin.assert:
+        that:
+          - rotation_keys_after_current_key_removal | length == 2
+          - >-
+            rotation_keys_after_current_key_removal | map(attribute='id') |
+            sort | list == [rotation_old_key_id, rotation_new_key_id] | sort
+          - >-
+            rotation_keys_after_current_key_removal |
+            selectattr('current', 'equalto', true) | map(attribute='id') |
+            list == [rotation_new_key_id]
+      no_log: true
+
     - name: Retire only captured old repository key
       ansible.builtin.command:
         argv:
