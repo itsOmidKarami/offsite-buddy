@@ -429,7 +429,10 @@
     - name: Require current repository key retirement is rejected
       ansible.builtin.assert:
         that:
-          - rotation_current_key_removal.rc != 0
+          - rotation_current_key_removal.rc == 1
+          - >-
+            'Fatal: refusing to remove key currently used to access repository'
+            in rotation_current_key_removal.stderr
       no_log: true
 
     - name: List repository keys after current key retirement refusal
