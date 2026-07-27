@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.0](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.9...v1.0.0) (2026-07-27)
+
+
+### Features
+
+* add guarded append-only retention maintenance ([#36](https://github.com/itsOmidKarami/offsite-buddy/issues/36)) ([5cc3bad](https://github.com/itsOmidKarami/offsite-buddy/commit/5cc3bad449afbd77c3e8dd1f31a9a33a3ec6f672))
+* add REST server credential rotation workflow ([#38](https://github.com/itsOmidKarami/offsite-buddy/issues/38)) ([45564a8](https://github.com/itsOmidKarami/offsite-buddy/commit/45564a8a538928c418485c7f2bad29cbba3004a5))
+* add snapshot-selective restore ([#34](https://github.com/itsOmidKarami/offsite-buddy/issues/34)) ([157a3d2](https://github.com/itsOmidKarami/offsite-buddy/commit/157a3d2f7990e5a9dcebbee9ae8e61f7d6da43fa))
+
 ## [0.1.9](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.8...v0.1.9) (2026-07-21)
 
 
