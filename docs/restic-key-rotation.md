@@ -94,12 +94,18 @@ sudo docker compose \
   -v "$rotation_new_password_file:/run/secrets/restic-new-password:ro" \
   restic key add \
   --new-password-file /run/secrets/restic-new-password
+
+sudo docker compose \
+  --project-name offsitebuddy-client-photos_to_alice \
+  --project-directory /etc/offsitebuddy/jobs/photos_to_alice \
+  -f /etc/offsitebuddy/jobs/photos_to_alice/compose.yaml \
+  run --rm restic --json key list
 ```
 
-Review the JSON key list and save only the ID whose `current` field is `true`
-as `rotation_old_key_id`. Confirm there are now two distinct IDs and that this
-saved old ID remains current. Before changing Vault, prove the new file opens
-the same repository:
+From the post-add command's JSON, confirm exactly two distinct IDs, confirm
+the saved `rotation_old_key_id` is still current, and save the other exact ID
+as `rotation_new_key_id`. Before changing Vault, prove the new file opens the
+same repository:
 
 ```sh
 sudo docker compose \
