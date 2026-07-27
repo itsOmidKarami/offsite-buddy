@@ -2,4 +2,8 @@
 set -euo pipefail
 
 job_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-docker compose --project-directory "$job_dir" run --rm restic snapshots
+docker compose \
+  --project-name "offsitebuddy-client-{{ job.name }}" \
+  --project-directory "$job_dir" \
+  -f "$job_dir/compose.yaml" \
+  run --rm restic snapshots

@@ -64,6 +64,8 @@ jobs:
         run: uv run molecule test -s cleanup --no-report
       - name: Run systemd timer lifecycle
         run: uv run molecule test -s systemd --no-report
+      - name: Run REST credential rotation lifecycle
+        run: uv run molecule test -s rest-rotation --no-report
       - name: Run negative validation checks
         run: >-
           uv run ansible-playbook -i localhost, -c local
@@ -76,7 +78,7 @@ jobs:
         run: uv run ansible-playbook -i localhost, -c local tests/e2e-local.yml
       - name: Run quota-full recovery smoke
         run: >-
-          sudo -E uv run ansible-playbook -i localhost, -c local
+          sudo -E "$(command -v uv)" run ansible-playbook -i localhost, -c local
           tests/quota-full.yml
       - name: Build collection
         run: uv run ansible-galaxy collection build --force

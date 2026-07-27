@@ -1,0 +1,104 @@
+---
+- name: Rotate only Alice's REST credential
+  hosts: all
+  become: true
+  environment:
+    DOCKER_HOST: >-
+      {{ lookup('env', 'MOLECULE_DOCKER_HOST') |
+      default('unix:///docker.sock', true) }}
+  vars:
+    rotation_new_alice_password: "rotation-new:p@ss?/segment"
+    rotation_bob_password: "rotation-bob:p@ss?/segment"
+    offsitebuddy_start_services: false
+    offsitebuddy_manage_systemd: false
+    offsitebuddy_cleanup_stale: false
+    offsitebuddy_friends:
+      - name: alice
+        quota:
+          path: /tmp/offsitebuddy-rest-rotation-alice-data
+          enforced: true
+          enforcement_note: "Molecule credential-rotation storage."
+        tailscale:
+          hostname: offsitebuddy-rest-rotation-alice
+          auth_key: rotation-alice-tailscale-sentinel
+        rest_server:
+          username: alice
+          password: "{{ rotation_new_alice_password }}"
+          port: 8000
+      - name: bob
+        quota:
+          path: /tmp/offsitebuddy-rest-rotation-bob-data
+          enforced: true
+          enforcement_note: "Molecule unchanged-control storage."
+        tailscale:
+          hostname: offsitebuddy-rest-rotation-bob
+          auth_key: rotation-bob-tailscale-sentinel
+        rest_server:
+          username: bob
+          password: "{{ rotation_bob_password }}"
+          port: 8100
+    offsitebuddy_client_jobs:
+      - name: to_alice
+        repository: >-
+          {{ 'rest:http://alice:' ~ (rotation_new_alice_password | urlencode |
+          replace('/', '%2F'))
+          ~ '@127.0.0.1:18080/' }}
+        password: rotation-alice-restic-sentinel
+        init_if_missing: false
+        run_initial_backup: false
+        schedule: "03:30"
+        backup_paths:
+          - /tmp/offsitebuddy-rest-rotation-alice-source
+      - name: to_bob
+        repository: >-
+          {{ 'rest:http://bob:' ~ (rotation_bob_password | urlencode |
+          replace('/', '%2F'))
+          ~ '@127.0.0.1:18081/' }}
+        password: rotation-bob-restic-sentinel
+        init_if_missing: false
+        run_initial_backup: false
+        schedule: "04:15"
+        backup_paths:
+          - /tmp/offsitebuddy-rest-rotation-bob-source
+  tasks:
+    - name: Render new Alice server credential
+      ansible.builtin.include_role:
+        name: itsomidkarami.offsitebuddy.server
+      no_log: true
+
+    - name: Render new Alice client repository credential
+      ansible.builtin.include_role:
+        name: itsomidkarami.offsitebuddy.client
+      no_log: true
+
+    - name: Stop REST rotation fixture for credential cutover
+      ansible.builtin.command:
+        argv:
+          - docker
+          - stop
+          - offsitebuddy-rest-rotation-fixture
+      changed_when: true
+
+    - name: Copy new Alice htpasswd into the fixture
+      ansible.builtin.command:
+        argv:
+          - docker
+          - cp
+          - /srv/offsitebuddy/friends/alice/htpasswd
+          - offsitebuddy-rest-rotation-fixture:/tmp/htpasswd
+      changed_when: true
+      no_log: true
+
+    - name: Restart REST rotation fixture after credential cutover
+      ansible.builtin.command:
+        argv:
+          - docker
+          - start
+          - offsitebuddy-rest-rotation-fixture
+      changed_when: true
+
+    - name: Wait for rotated REST rotation fixture
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 18080
+        timeout: 60

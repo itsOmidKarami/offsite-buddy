@@ -1,0 +1,193 @@
+---
+- name: Verify REST credential rotation
+  hosts: all
+  become: true
+  environment:
+    DOCKER_HOST: >-
+      {{ lookup('env', 'MOLECULE_DOCKER_HOST') |
+      default('unix:///docker.sock', true) }}
+  vars:
+    rotation_old_alice_password: "rotation-old:p@ss?/segment"
+    rotation_new_alice_password: "rotation-new:p@ss?/segment"
+    rotation_bob_password: "rotation-bob:p@ss?/segment"
+  tasks:
+    - name: Read old credential artifact checksum file
+      ansible.builtin.slurp:
+        path: /tmp/offsitebuddy-rest-rotation-before.yml
+      register: rotation_before_file
+      no_log: true
+
+    - name: Parse old credential artifact checksums
+      ansible.builtin.set_fact:
+        rotation_before: >-
+          {{ rotation_before_file.content | b64decode | from_yaml }}
+      no_log: true
+
+    - name: Capture final credential artifact checksums
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        checksum_algorithm: sha256
+      loop:
+        - /srv/offsitebuddy/friends/alice/htpasswd
+        - /srv/offsitebuddy/friends/bob/htpasswd
+        - /etc/offsitebuddy/jobs/to_alice/.env
+        - /etc/offsitebuddy/jobs/to_bob/.env
+      register: rotation_after_files
+      no_log: true
+
+    - name: Verify final htpasswd credentials
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - >-
+            from passlib.apache import HtpasswdFile;
+            alice = HtpasswdFile('/srv/offsitebuddy/friends/alice/htpasswd');
+            bob = HtpasswdFile('/srv/offsitebuddy/friends/bob/htpasswd');
+            assert alice.check_password('alice',
+            'rotation-new:p@ss?/segment');
+            assert not alice.check_password('alice',
+            'rotation-old:p@ss?/segment');
+            assert bob.check_password('bob',
+            'rotation-bob:p@ss?/segment'); print('ok')
+      changed_when: false
+      register: rotation_htpasswd_check
+      no_log: true
+
+    - name: Assert final htpasswd check passed
+      ansible.builtin.assert:
+        that:
+          - rotation_htpasswd_check.stdout == 'ok'
+      no_log: true
+
+    - name: Check new Alice credential against fixture
+      ansible.builtin.uri:
+        url: http://127.0.0.1:18080/
+        method: OPTIONS
+        url_username: alice
+        url_password: "{{ rotation_new_alice_password }}"
+        force_basic_auth: true
+        status_code: 405
+      no_log: true
+
+    - name: Check old Alice credential is rejected by fixture
+      ansible.builtin.uri:
+        url: http://127.0.0.1:18080/
+        method: OPTIONS
+        url_username: alice
+        url_password: "{{ rotation_old_alice_password }}"
+        force_basic_auth: true
+        status_code: 401
+      no_log: true
+
+    - name: Check unchanged Bob credential against live fixture
+      ansible.builtin.uri:
+        url: http://127.0.0.1:18081/
+        method: OPTIONS
+        url_username: bob
+        url_password: "{{ rotation_bob_password }}"
+        force_basic_auth: true
+        status_code: 405
+      no_log: true
+
+    - name: Check rotated Alice repository through rendered client URL
+      ansible.builtin.command:
+        argv:
+          - docker
+          - run
+          - --rm
+          - --network
+          - container:offsitebuddy-rest-rotation
+          - --env-file
+          - /etc/offsitebuddy/jobs/to_alice/.env
+          - --env
+          - RESTIC_PASSWORD_FILE=
+          - --env
+          - RESTIC_PASSWORD=rotation-alice-restic-sentinel
+          - restic/restic:0.19.0
+          - snapshots
+      changed_when: false
+      no_log: true
+
+    - name: Require old rendered Alice client URL rejection
+      block:
+        - name: Try old rendered Alice client URL after cutover
+          ansible.builtin.command:
+            argv:
+              - docker
+              - run
+              - --rm
+              - --network
+              - container:offsitebuddy-rest-rotation
+              - --env-file
+              - /tmp/offsitebuddy-rest-rotation-alice-old.env
+              - --env
+              - RESTIC_PASSWORD_FILE=
+              - --env
+              - RESTIC_PASSWORD=rotation-alice-restic-sentinel
+              - restic/restic:0.19.0
+              - snapshots
+          changed_when: false
+          no_log: true
+
+        - name: Fail if old rendered Alice client URL still authenticates
+          ansible.builtin.fail:
+            msg: Old rendered Alice client URL unexpectedly authenticated.
+      rescue:
+        - name: Verify old rendered Alice client URL failed authentication
+          ansible.builtin.assert:
+            that:
+              - >-
+                ansible_failed_task.name is search(
+                  'Try old rendered Alice client URL'
+                )
+              - >-
+                ((ansible_failed_result.stdout | default('')) ~
+                (ansible_failed_result.stderr | default(''))) | lower is
+                search('401|unauthorized')
+          no_log: true
+
+    - name: Read final Alice client environment
+      ansible.builtin.slurp:
+        path: /etc/offsitebuddy/jobs/to_alice/.env
+      register: final_alice_env
+      no_log: true
+
+    - name: Assert Alice environment uses no encoded old credential
+      ansible.builtin.assert:
+        that:
+          - >-
+            (rotation_new_alice_password | urlencode |
+            replace('/', '%2F')) in
+            (final_alice_env.content | b64decode)
+          - >-
+            (rotation_old_alice_password | urlencode |
+            replace('/', '%2F')) not in
+            (final_alice_env.content | b64decode)
+          - >-
+            rotation_new_alice_password not in
+            (final_alice_env.content | b64decode)
+          - >-
+            rotation_old_alice_password not in
+            (final_alice_env.content | b64decode)
+          - >-
+            '%2F' in
+            (final_alice_env.content | b64decode)
+      no_log: true
+
+    - name: Assert Alice changed and Bob remained unchanged
+      ansible.builtin.assert:
+        that:
+          - >-
+            rotation_after_files.results[0].stat.checksum !=
+            rotation_before.alice_htpasswd
+          - >-
+            rotation_after_files.results[2].stat.checksum !=
+            rotation_before.alice_env
+          - >-
+            rotation_after_files.results[1].stat.checksum ==
+            rotation_before.bob_htpasswd
+          - >-
+            rotation_after_files.results[3].stat.checksum ==
+            rotation_before.bob_env
+      no_log: true

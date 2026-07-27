@@ -1,0 +1,12 @@
+---
+- name: Remove owned REST rotation fixtures
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  environment:
+    DOCKER_HOST: >-
+      {{ lookup('env', 'MOLECULE_CLEANUP_DOCKER_HOST') |
+      default('unix:///var/run/docker.sock', true) }}
+  tasks:
+    - name: Run owned REST rotation fixture cleanup
+      ansible.builtin.include_tasks: tasks/cleanup-owned-fixtures.yml
