@@ -1,6 +1,6 @@
 # Contributing
 
-Keep v0.1 focused on restic, rest-server, Docker Compose, Tailscale, existing quota-managed paths, and systemd timers.
+Keep v1 focused on restic, rest-server, Docker Compose, Tailscale, existing quota-managed paths, and systemd timers.
 
 Run these before submitting changes:
 

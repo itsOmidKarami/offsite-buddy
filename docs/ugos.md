@@ -1,6 +1,6 @@
 # UGOS Shared Folder Quotas
 
-For v0.1, use UGOS to create a shared folder with a quota for each friend.
+For v1, use UGOS to create a shared folder with a quota for each friend.
 
 Then configure that path:
 
