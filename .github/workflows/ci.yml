@@ -11,10 +11,8 @@ permissions:
   contents: read
 
 jobs:
-  lint:
+  checks:
     runs-on: ubuntu-latest
-    env:
-      MOLECULE_GLOB: molecule/*/molecule.yml
     steps:
       - name: Validate PR title
         if: ${{ github.event_name == 'pull_request' }}
@@ -46,26 +44,6 @@ jobs:
         run: uv run --locked pre-commit run --all-files
       - name: Test maintenance endpoint cleanup trap
         run: bash tests/maintenance-endpoint.sh
-      - name: Run Molecule converge
-        run: |
-          molecule_schema_filter="$(
-            printf '%s%s  Driver docker does not provide a schema.' WARN ING
-          )"
-          uv run molecule converge --no-report \
-            2> >(grep -v -F "$molecule_schema_filter" >&2)
-      - name: Run Molecule verify
-        run: |
-          molecule_schema_filter="$(
-            printf '%s%s  Driver docker does not provide a schema.' WARN ING
-          )"
-          uv run molecule verify --no-report \
-            2> >(grep -v -F "$molecule_schema_filter" >&2)
-      - name: Run stale cleanup lifecycle
-        run: uv run molecule test -s cleanup --no-report
-      - name: Run systemd timer lifecycle
-        run: uv run molecule test -s systemd --no-report
-      - name: Run REST credential rotation lifecycle
-        run: uv run molecule test -s rest-rotation --no-report
       - name: Run negative validation checks
         run: >-
           uv run ansible-playbook -i localhost, -c local
@@ -74,15 +52,71 @@ jobs:
         run: >-
           uv run ansible-playbook -i localhost, -c local
           tests/client-sidecar-render.yml
-      - name: Run local backup restore smoke
-        run: uv run ansible-playbook -i localhost, -c local tests/e2e-local.yml
-      - name: Run restic key rotation smoke
-        run: >-
-          uv run ansible-playbook -i localhost, -c local
-          tests/restic-key-rotation.yml
-      - name: Run quota-full recovery smoke
-        run: >-
-          sudo -E "$(command -v uv)" run ansible-playbook -i localhost, -c local
-          tests/quota-full.yml
       - name: Build collection
         run: uv run ansible-galaxy collection build --force
+
+  scenarios:
+    name: scenario (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    env:
+      MOLECULE_GLOB: molecule/*/molecule.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            command: |
+              molecule_schema_filter="$(
+                printf '%s%s  Driver docker does not provide a schema.' WARN ING
+              )"
+              uv run molecule converge --no-report \
+                2> >(grep -v -F "$molecule_schema_filter" >&2)
+              uv run molecule verify --no-report \
+                2> >(grep -v -F "$molecule_schema_filter" >&2)
+          - name: cleanup
+            command: uv run molecule test -s cleanup --no-report
+          - name: systemd
+            command: uv run molecule test -s systemd --no-report
+          - name: rest-rotation
+            command: uv run molecule test -s rest-rotation --no-report
+          - name: local-backup-restore
+            command: >-
+              uv run ansible-playbook -i localhost, -c local tests/e2e-local.yml
+          - name: restic-key-rotation
+            command: >-
+              uv run ansible-playbook -i localhost, -c local
+              tests/restic-key-rotation.yml
+          - name: quota-full-recovery
+            command: >-
+              sudo -E "$(command -v uv)" run ansible-playbook
+              -i localhost, -c local tests/quota-full.yml
+    steps:
+      - name: Configure git defaults
+        run: git config --global init.defaultBranch main
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: python -m pip install --upgrade pip uv
+      - name: Install tools
+        run: |
+          uv sync --locked --group dev
+          uv run ansible-galaxy collection install -r requirements-dev.yml
+      - name: Run ${{ matrix.name }} scenario
+        run: ${{ matrix.command }}
+
+  lint:
+    if: ${{ always() }}
+    needs:
+      - checks
+      - scenarios
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful CI jobs
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          SCENARIOS_RESULT: ${{ needs.scenarios.result }}
+        run: |
+          test "$CHECKS_RESULT" = success
+          test "$SCENARIOS_RESULT" = success

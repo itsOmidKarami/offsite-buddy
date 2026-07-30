@@ -412,8 +412,54 @@ def main():
         for password_var in password_vars:
             assert "/" in rotation_vars[password_var]
 
-    workflow = read(".github/workflows/ci.yml")
-    assert "uv run molecule test -s rest-rotation --no-report" in workflow
+    workflow_text = read(".github/workflows/ci.yml")
+    workflow = yaml.safe_load(workflow_text)
+    jobs = workflow["jobs"]
+
+    assert set(jobs) == {"checks", "scenarios", "lint"}
+    assert jobs["scenarios"]["strategy"]["fail-fast"] is False
+    scenarios = jobs["scenarios"]["strategy"]["matrix"]["include"]
+    assert {scenario["name"] for scenario in scenarios} == {
+        "default",
+        "cleanup",
+        "systemd",
+        "rest-rotation",
+        "local-backup-restore",
+        "restic-key-rotation",
+        "quota-full-recovery",
+    }
+    default_command = next(
+        scenario["command"]
+        for scenario in scenarios
+        if scenario["name"] == "default"
+    )
+    assert default_command.index("molecule converge") < default_command.index(
+        "molecule verify"
+    )
+
+    lint = jobs["lint"]
+    assert set(lint["needs"]) == {"checks", "scenarios"}
+    assert "always()" in lint["if"]
+    lint_step = lint["steps"][0]
+    assert lint_step["env"] == {
+        "CHECKS_RESULT": "${{ needs.checks.result }}",
+        "SCENARIOS_RESULT": "${{ needs.scenarios.result }}",
+    }
+    assert 'test "$CHECKS_RESULT" = success' in lint_step["run"]
+    assert 'test "$SCENARIOS_RESULT" = success' in lint_step["run"]
+
+    workflow_flat = " ".join(workflow_text.split())
+    for command in (
+        "uv run molecule converge --no-report",
+        "uv run molecule verify --no-report",
+        "uv run molecule test -s cleanup --no-report",
+        "uv run molecule test -s systemd --no-report",
+        "uv run molecule test -s rest-rotation --no-report",
+        "uv run ansible-playbook -i localhost, -c local tests/e2e-local.yml",
+        "uv run ansible-playbook -i localhost, -c local tests/restic-key-rotation.yml",
+        'sudo -E "$(command -v uv)" run ansible-playbook',
+    ):
+        assert workflow_flat.count(command) == 1, command
 
     quota_recovery_docs = read("docs/quota-full-recovery.md").lower()
     for text in (
