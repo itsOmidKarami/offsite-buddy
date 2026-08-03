@@ -419,23 +419,68 @@ def main():
     assert set(jobs) == {"checks", "scenarios", "lint"}
     assert jobs["scenarios"]["strategy"]["fail-fast"] is False
     scenarios = jobs["scenarios"]["strategy"]["matrix"]["include"]
-    assert {scenario["name"] for scenario in scenarios} == {
-        "default",
-        "cleanup",
-        "systemd",
-        "rest-rotation",
-        "local-backup-restore",
-        "restic-key-rotation",
-        "quota-full-recovery",
-    }
-    default_command = next(
-        scenario["command"]
+    scenario_commands = {
+        scenario["name"]: " ".join(scenario["command"].split())
         for scenario in scenarios
-        if scenario["name"] == "default"
-    )
-    assert default_command.index("molecule converge") < default_command.index(
-        "molecule verify"
-    )
+    }
+    assert scenario_commands == {
+        "default": (
+            'molecule_schema_filter="$( printf \'%s%s Driver docker does not '
+            "provide a schema.' WARN ING )\" uv run molecule converge "
+            '--no-report \\ 2> >(grep -v -F "$molecule_schema_filter" >&2) '
+            'uv run molecule verify --no-report \\ 2> >(grep -v -F '
+            '"$molecule_schema_filter" >&2)'
+        ),
+        "cleanup": "uv run molecule test -s cleanup --no-report",
+        "systemd": "uv run molecule test -s systemd --no-report",
+        "rest-rotation": "uv run molecule test -s rest-rotation --no-report",
+        "local-backup-restore": (
+            "uv run ansible-playbook -i localhost, -c local tests/e2e-local.yml"
+        ),
+        "restic-key-rotation": (
+            "uv run ansible-playbook -i localhost, -c local "
+            "tests/restic-key-rotation.yml"
+        ),
+        "quota-full-recovery": (
+            'sudo -E "$(command -v uv)" run ansible-playbook '
+            "-i localhost, -c local tests/quota-full.yml"
+        ),
+    }
+
+    checks_commands = {
+        step["name"]: " ".join(step["run"].split())
+        for step in jobs["checks"]["steps"]
+        if "name" in step and "run" in step
+    }
+    assert checks_commands == {
+        "Validate PR title": (
+            "type_pattern='feat|fix|perf|revert|docs|test|ci|chore|refactor' "
+            'title_pattern="^(${type_pattern})(\\([a-z0-9._/-]+\\))?!?: .+" '
+            'if [[ ! "$PR_TITLE" =~ $title_pattern ]]; then '
+            "marker=\"$(printf '::%s::' error)\" "
+            'echo "${marker}PR title must be a conventional commit." '
+            'echo "${marker}Use fix:/feat:/perf: for release-worthy changes." '
+            'echo "${marker}Use docs:/test:/ci:/chore:/refactor: otherwise." '
+            "exit 1 fi"
+        ),
+        "Configure git defaults": "git config --global init.defaultBranch main",
+        "Install uv": "python -m pip install --upgrade pip uv",
+        "Install tools": (
+            "uv sync --locked --group dev uv run ansible-galaxy collection "
+            "install -r requirements-dev.yml"
+        ),
+        "Run pre-commit checks": "uv run --locked pre-commit run --all-files",
+        "Test maintenance endpoint cleanup trap": "bash tests/maintenance-endpoint.sh",
+        "Run negative validation checks": (
+            "uv run ansible-playbook -i localhost, -c local "
+            "tests/validation-negative.yml"
+        ),
+        "Run client sidecar render check": (
+            "uv run ansible-playbook -i localhost, -c local "
+            "tests/client-sidecar-render.yml"
+        ),
+        "Build collection": "uv run ansible-galaxy collection build --force",
+    }
 
     lint = jobs["lint"]
     assert set(lint["needs"]) == {"checks", "scenarios"}
@@ -447,19 +492,6 @@ def main():
     }
     assert 'test "$CHECKS_RESULT" = success' in lint_step["run"]
     assert 'test "$SCENARIOS_RESULT" = success' in lint_step["run"]
-
-    workflow_flat = " ".join(workflow_text.split())
-    for command in (
-        "uv run molecule converge --no-report",
-        "uv run molecule verify --no-report",
-        "uv run molecule test -s cleanup --no-report",
-        "uv run molecule test -s systemd --no-report",
-        "uv run molecule test -s rest-rotation --no-report",
-        "uv run ansible-playbook -i localhost, -c local tests/e2e-local.yml",
-        "uv run ansible-playbook -i localhost, -c local tests/restic-key-rotation.yml",
-        'sudo -E "$(command -v uv)" run ansible-playbook',
-    ):
-        assert workflow_flat.count(command) == 1, command
 
     quota_recovery_docs = read("docs/quota-full-recovery.md").lower()
     for text in (
