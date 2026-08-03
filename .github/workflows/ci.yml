@@ -114,9 +114,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Require successful CI jobs
-        env:
-          CHECKS_RESULT: ${{ needs.checks.result }}
-          SCENARIOS_RESULT: ${{ needs.scenarios.result }}
         run: |
-          test "$CHECKS_RESULT" = success
-          test "$SCENARIOS_RESULT" = success
+          test "${{ needs.checks.result }}" = success
+          test "${{ needs.scenarios.result }}" = success

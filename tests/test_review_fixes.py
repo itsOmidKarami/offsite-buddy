@@ -486,12 +486,9 @@ def main():
     assert set(lint["needs"]) == {"checks", "scenarios"}
     assert "always()" in lint["if"]
     lint_step = lint["steps"][0]
-    assert lint_step["env"] == {
-        "CHECKS_RESULT": "${{ needs.checks.result }}",
-        "SCENARIOS_RESULT": "${{ needs.scenarios.result }}",
-    }
-    assert 'test "$CHECKS_RESULT" = success' in lint_step["run"]
-    assert 'test "$SCENARIOS_RESULT" = success' in lint_step["run"]
+    assert "env" not in lint_step
+    assert 'test "${{ needs.checks.result }}" = success' in lint_step["run"]
+    assert 'test "${{ needs.scenarios.result }}" = success' in lint_step["run"]
 
     quota_recovery_docs = read("docs/quota-full-recovery.md").lower()
     for text in (
