@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/itsOmidKarami/offsite-buddy/compare/v1.0.1...v1.0.2) (2026-08-05)
+
+
+### Bug Fixes
+
+* support fresh-deployment check mode ([#47](https://github.com/itsOmidKarami/offsite-buddy/issues/47)) ([eb69ff0](https://github.com/itsOmidKarami/offsite-buddy/commit/eb69ff0b665fd42179398aa599061b5f0641dc57))
+
 ## [1.0.1](https://github.com/itsOmidKarami/offsite-buddy/compare/v1.0.0...v1.0.1) (2026-08-05)
 
 
