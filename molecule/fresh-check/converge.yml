@@ -1,0 +1,43 @@
+---
+- name: Check fresh server and client deployment
+  hosts: all
+  become: true
+  environment:
+    DOCKER_HOST: >-
+      {{ lookup('env', 'MOLECULE_DOCKER_HOST') |
+      default('unix:///docker.sock', true) }}
+  vars:
+    offsitebuddy_server_root: /srv/offsitebuddy-fresh-check
+    offsitebuddy_client_root: /etc/offsitebuddy-fresh-check/jobs
+    offsitebuddy_start_services: true
+    offsitebuddy_cleanup_stale: false
+    offsitebuddy_manage_systemd: false
+    offsitebuddy_friends:
+      - name: fresh_check
+        quota:
+          path: /tmp/offsitebuddy-fresh-check-quota
+          enforced: true
+          enforcement_note: Molecule fresh check-mode fixture
+        tailscale:
+          hostname: offsitebuddy-fresh-check-server
+          auth_key: molecule-fresh-check-server-auth-key
+        rest_server:
+          username: fresh-check
+          password: molecule-fresh-check-rest-server-password
+          mode: read_write
+    offsitebuddy_client_jobs:
+      - name: fresh_check
+        repository: /tmp/offsitebuddy-fresh-check-repository
+        password: molecule-fresh-check-restic-password
+        init_if_missing: true
+        run_initial_backup: true
+        schedule: "03:30"
+        backup_paths:
+          - /tmp/offsitebuddy-fresh-check-source
+        heartbeat:
+          start_url: ""
+          success_url: ""
+          failure_url: ""
+  roles:
+    - role: server
+    - role: client

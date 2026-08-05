@@ -1,0 +1,57 @@
+---
+- name: Verify fresh check mode has no side effects
+  hosts: all
+  become: true
+  environment:
+    DOCKER_HOST: >-
+      {{ lookup('env', 'MOLECULE_DOCKER_HOST') |
+      default('unix:///docker.sock', true) }}
+  tasks:
+    - name: Check managed paths and units remain absent
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /srv/offsitebuddy-fresh-check
+        - /etc/offsitebuddy-fresh-check
+        - /tmp/offsitebuddy-fresh-check-repository
+        - /etc/systemd/system/offsitebuddy-backup-fresh_check.service
+        - /etc/systemd/system/offsitebuddy-backup-fresh_check.timer
+        - /etc/systemd/system/offsitebuddy-check-fresh_check.service
+        - /etc/systemd/system/offsitebuddy-check-fresh_check.timer
+      register: fresh_check_paths
+
+    - name: Find server repository contents
+      ansible.builtin.find:
+        paths: /tmp/offsitebuddy-fresh-check-quota
+        hidden: true
+        recurse: true
+      register: fresh_check_repository_contents
+
+    - name: Inspect fresh Compose projects
+      community.docker.docker_host_info:
+        containers: true
+        containers_all: true
+        containers_filters:
+          label: "com.docker.compose.project={{ item }}"
+        networks: true
+        networks_filters:
+          label: "com.docker.compose.project={{ item }}"
+      loop:
+        - offsitebuddy-friend-fresh_check
+        - offsitebuddy-client-fresh_check
+      register: fresh_check_compose_projects
+      no_log: true
+
+    - name: Require a side-effect-free fresh dry run
+      ansible.builtin.assert:
+        that:
+          - >-
+            fresh_check_paths.results |
+            map(attribute='stat.exists') | select('equalto', true) | length == 0
+          - fresh_check_repository_contents.matched == 0
+          - >-
+            fresh_check_compose_projects.results |
+            map(attribute='containers') | map('length') | sum == 0
+          - >-
+            fresh_check_compose_projects.results |
+            map(attribute='networks') | map('length') | sum == 0

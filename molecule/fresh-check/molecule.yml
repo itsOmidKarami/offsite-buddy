@@ -1,0 +1,31 @@
+---
+dependency:
+  name: galaxy
+  options:
+    requirements-file: requirements-dev.yml
+driver:
+  name: docker
+platforms:
+  - name: offsitebuddy-fresh-check
+    image: geerlingguy/docker-debian12-ansible:latest
+    command: /lib/systemd/systemd
+    privileged: true
+    cgroupns_mode: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ${DOCKER_SOCKET_VOLUME:-/var/run/docker.sock:/docker.sock}
+    pre_build_image: true
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      remote_tmp: /tmp
+      roles_path: ${MOLECULE_PROJECT_DIRECTORY}/roles
+  playbooks:
+    prepare: prepare.yml
+    converge: converge.yml
+verifier:
+  name: ansible
+scenario:
+  converge_sequence:
+    - converge

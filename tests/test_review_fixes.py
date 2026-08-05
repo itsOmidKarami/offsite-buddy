@@ -433,6 +433,31 @@ def main():
             'uv run molecule verify --no-report \\ 2> >(grep -v -F '
             '"$molecule_schema_filter" >&2)'
         ),
+        "fresh-check": (
+            'fresh_check_output="$(mktemp)" trap \'uv run molecule destroy '
+            "-s fresh-check --no-report\' EXIT uv run molecule create -s "
+            "fresh-check --no-report uv run molecule converge -s fresh-check "
+            "--no-report "
+            '\\ -- --check --diff | tee "$fresh_check_output" awk \' '
+            '/TASK \\[.*Write per-friend Compose file\\]/ { task="server"; '
+            "next } /TASK \\[.*Write restic Compose files\\]/ { "
+            'task="client"; next } /TASK \\[.*Converge per-friend server '
+            'stacks\\]/ { task="server_runtime"; next } /TASK \\[.*Check for '
+            'existing restic repositories\\]/ { task="client_check"; next } '
+            '/TASK \\[.*Initialize missing restic repositories\\]/ { '
+            'task="client_init"; next } /TASK \\[.*Run initial backups\\]/ { '
+            'task="client_backup"; next } /^TASK / { task="" } /^changed:/ && '
+            'task == "server" { server=1 } /^changed:/ && task == "client" '
+            '{ client=1 } /^skipping:/ && task == "server_runtime" { '
+            'server_runtime=1 } /^skipping:/ && task == "client_check" { '
+            'client_check=1 } /^skipping:/ && task == "client_init" { '
+            'client_init=1 } /^skipping:/ && task == "client_backup" { '
+            'client_backup=1 } END { exit !(server && client && server_runtime '
+            '&& client_check && client_init && client_backup) } \' '
+            '"$fresh_check_output" uv run molecule verify -s fresh-check '
+            "--no-report uv run molecule destroy -s fresh-check --no-report "
+            "trap - EXIT"
+        ),
         "cleanup": "uv run molecule test -s cleanup --no-report",
         "systemd": "uv run molecule test -s systemd --no-report",
         "rest-rotation": "uv run molecule test -s rest-rotation --no-report",
@@ -1080,6 +1105,7 @@ def main():
     ]
     assert "community.docker.docker_compose_v2_run" in repository_check_task
     assert repository_check_task["changed_when"] is False
+    assert "not ansible_check_mode" in repository_check_task["when"]
     assert repository_check_task["failed_when"] == (
         "offsitebuddy_restic_repository_check.rc not in [0, 10]"
     )
@@ -1088,11 +1114,14 @@ def main():
         "Initialize missing restic repositories"
     ]
     assert "community.docker.docker_compose_v2_run" in repository_init_task
+    assert "not ansible_check_mode" in repository_init_task["when"]
     assert any(
         "offsitebuddy_restic_repository_check.results[job_index].rc" in condition
         and "== 10" in condition
         for condition in repository_init_task["when"]
     )
+    initial_backup_task = client_task_defs["Run initial backups"]
+    assert "not ansible_check_mode" in initial_backup_task["when"]
     assert ".offsitebuddy-managed" in client_tasks, "client role must mark managed jobs"
     assert "no_log: true" in client_tasks.split("- name: Initialize missing restic repositories")[0], (
         "helper script templating must hide heartbeat URLs"

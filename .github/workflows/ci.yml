@@ -75,6 +75,43 @@ jobs:
                 2> >(grep -v -F "$molecule_schema_filter" >&2)
               uv run molecule verify --no-report \
                 2> >(grep -v -F "$molecule_schema_filter" >&2)
+          - name: fresh-check
+            command: |
+              fresh_check_output="$(mktemp)"
+              trap 'uv run molecule destroy -s fresh-check --no-report' EXIT
+              uv run molecule create -s fresh-check --no-report
+              uv run molecule converge -s fresh-check --no-report \
+                -- --check --diff | tee "$fresh_check_output"
+              awk '
+                /TASK \[.*Write per-friend Compose file\]/ {
+                  task="server"; next
+                }
+                /TASK \[.*Write restic Compose files\]/ { task="client"; next }
+                /TASK \[.*Converge per-friend server stacks\]/ {
+                  task="server_runtime"; next
+                }
+                /TASK \[.*Check for existing restic repositories\]/ {
+                  task="client_check"; next
+                }
+                /TASK \[.*Initialize missing restic repositories\]/ {
+                  task="client_init"; next
+                }
+                /TASK \[.*Run initial backups\]/ { task="client_backup"; next }
+                /^TASK / { task="" }
+                /^changed:/ && task == "server" { server=1 }
+                /^changed:/ && task == "client" { client=1 }
+                /^skipping:/ && task == "server_runtime" { server_runtime=1 }
+                /^skipping:/ && task == "client_check" { client_check=1 }
+                /^skipping:/ && task == "client_init" { client_init=1 }
+                /^skipping:/ && task == "client_backup" { client_backup=1 }
+                END {
+                  exit !(server && client && server_runtime && client_check &&
+                         client_init && client_backup)
+                }
+              ' "$fresh_check_output"
+              uv run molecule verify -s fresh-check --no-report
+              uv run molecule destroy -s fresh-check --no-report
+              trap - EXIT
           - name: cleanup
             command: uv run molecule test -s cleanup --no-report
           - name: systemd
