@@ -89,6 +89,19 @@
         - /srv/offsitebuddy/friends/bob/maintenance-endpoint.sh
       register: bob_maintenance_file_stats
 
+    - name: Find quota write probes
+      ansible.builtin.find:
+        paths:
+          - /tmp/offsitebuddy-alice
+          - /tmp/offsitebuddy-bob
+        patterns: .offsitebuddy-write-probe-*
+        hidden: true
+      register: quota_write_probes
+
+    - name: Assert quota write probes were removed
+      ansible.builtin.assert:
+        that: quota_write_probes.matched == 0
+
     - name: Verify maintenance helper syntax
       ansible.builtin.command:
         cmd: bash -n /srv/offsitebuddy/friends/alice/maintenance-endpoint.sh

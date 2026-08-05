@@ -428,6 +428,8 @@ def main():
             'molecule_schema_filter="$( printf \'%s%s Driver docker does not '
             "provide a schema.' WARN ING )\" uv run molecule converge "
             '--no-report \\ 2> >(grep -v -F "$molecule_schema_filter" >&2) '
+            "uv run molecule converge --no-report -- --check --diff \\ "
+            '2> >(grep -v -F "$molecule_schema_filter" >&2) '
             'uv run molecule verify --no-report \\ 2> >(grep -v -F '
             '"$molecule_schema_filter" >&2)'
         ),
