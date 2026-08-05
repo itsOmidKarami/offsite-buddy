@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/itsOmidKarami/offsite-buddy/compare/v1.0.0...v1.0.1) (2026-08-05)
+
+
+### Bug Fixes
+
+* skip quota probe cleanup in check mode ([#45](https://github.com/itsOmidKarami/offsite-buddy/issues/45)) ([b3dfcd6](https://github.com/itsOmidKarami/offsite-buddy/commit/b3dfcd6df51badfdd98027523eeef28e0f94c647))
+
 ## [1.0.0](https://github.com/itsOmidKarami/offsite-buddy/compare/v0.1.9...v1.0.0) (2026-07-27)
 
 
