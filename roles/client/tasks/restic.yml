@@ -136,6 +136,7 @@
     label: "{{ job.name }}"
   when:
     - offsitebuddy_start_services | bool
+    - not ansible_check_mode
     - job.init_if_missing | default(true) | bool
   register: offsitebuddy_restic_repository_check
   no_log: true
@@ -156,6 +157,7 @@
     label: "{{ job.name }}"
   when:
     - offsitebuddy_start_services | bool
+    - not ansible_check_mode
     - job.init_if_missing | default(true) | bool
     - >-
       (offsitebuddy_restic_repository_check.results[job_index].rc | default(0))
@@ -170,5 +172,6 @@
     label: "{{ job.name }}"
   when:
     - offsitebuddy_start_services | bool
+    - not ansible_check_mode
     - job.run_initial_backup | default(true) | bool
   no_log: true

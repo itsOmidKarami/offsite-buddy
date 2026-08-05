@@ -1,0 +1,66 @@
+---
+- name: Prepare fresh check-mode inputs
+  hosts: all
+  become: true
+  vars:
+    docker_apt_architecture: >-
+      {{ {'aarch64': 'arm64', 'x86_64': 'amd64'}[
+      ansible_facts['architecture']] }}
+  tasks:
+    - name: Install Docker repository and role prerequisites
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - python3-debian
+          - python3-passlib
+          - python3-requests
+        state: present
+        update_cache: true
+
+    - name: Configure Docker repository
+      ansible.builtin.deb822_repository:
+        name: docker
+        types:
+          - deb
+        uris:
+          - https://download.docker.com/linux/debian
+        suites:
+          - "{{ ansible_facts['distribution_release'] }}"
+        components:
+          - stable
+        architectures:
+          - "{{ docker_apt_architecture }}"
+        signed_by: https://download.docker.com/linux/debian/gpg
+        state: present
+
+    - name: Install Docker CLI and Compose plugin
+      ansible.builtin.apt:
+        name:
+          - docker-ce-cli
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Create unmanaged input directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /tmp/offsitebuddy-fresh-check-quota
+        - /tmp/offsitebuddy-fresh-check-source
+
+    - name: Check fresh managed paths are absent
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /srv/offsitebuddy-fresh-check
+        - /etc/offsitebuddy-fresh-check
+        - /tmp/offsitebuddy-fresh-check-repository
+      register: fresh_managed_paths
+
+    - name: Require fresh managed paths
+      ansible.builtin.assert:
+        that: >-
+          fresh_managed_paths.results |
+          map(attribute='stat.exists') | select('equalto', true) | length == 0

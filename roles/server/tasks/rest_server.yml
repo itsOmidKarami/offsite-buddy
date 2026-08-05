@@ -208,4 +208,6 @@
   loop_control:
     loop_var: friend_name
     label: "{{ friend_name }}"
-  when: offsitebuddy_start_services | bool
+  when:
+    - offsitebuddy_start_services | bool
+    - not ansible_check_mode
