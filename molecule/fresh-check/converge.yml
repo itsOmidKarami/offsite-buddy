@@ -11,7 +11,6 @@
     offsitebuddy_client_root: /etc/offsitebuddy-fresh-check/jobs
     offsitebuddy_start_services: true
     offsitebuddy_cleanup_stale: false
-    offsitebuddy_manage_systemd: false
     offsitebuddy_friends:
       - name: fresh_check
         quota:

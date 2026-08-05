@@ -434,7 +434,8 @@ def main():
             '"$molecule_schema_filter" >&2)'
         ),
         "fresh-check": (
-            'fresh_check_output="$(mktemp)" trap \'uv run molecule destroy '
+            'set -o pipefail fresh_check_output="$(mktemp)" trap \'uv run '
+            "molecule destroy "
             "-s fresh-check --no-report\' EXIT uv run molecule create -s "
             "fresh-check --no-report uv run molecule converge -s fresh-check "
             "--no-report "
@@ -446,14 +447,29 @@ def main():
             'existing restic repositories\\]/ { task="client_check"; next } '
             '/TASK \\[.*Initialize missing restic repositories\\]/ { '
             'task="client_init"; next } /TASK \\[.*Run initial backups\\]/ { '
-            'task="client_backup"; next } /^TASK / { task="" } /^changed:/ && '
+            'task="client_backup"; next } /TASK \\[.*Write backup systemd '
+            'services\\]/ { task="backup_service"; next } /TASK \\[.*Write '
+            'backup systemd timers\\]/ { task="backup_timer"; next } /TASK '
+            '\\[.*Write check systemd services\\]/ { task="check_service"; '
+            'next } /TASK \\[.*Write check systemd timers\\]/ { '
+            'task="check_timer"; next } /TASK \\[.*Enable backup timers\\]/ { '
+            'task="enable_backup"; next } /TASK \\[.*Enable check timers\\]/ { '
+            'task="enable_check"; next } /^TASK / { task="" } /^changed:/ && '
             'task == "server" { server=1 } /^changed:/ && task == "client" '
-            '{ client=1 } /^skipping:/ && task == "server_runtime" { '
+            '{ client=1 } /^changed:/ && task == "backup_service" { '
+            'backup_service=1 } /^changed:/ && task == "backup_timer" { '
+            'backup_timer=1 } /^changed:/ && task == "check_service" { '
+            'check_service=1 } /^changed:/ && task == "check_timer" { '
+            'check_timer=1 } /^skipping:/ && task == "server_runtime" { '
             'server_runtime=1 } /^skipping:/ && task == "client_check" { '
             'client_check=1 } /^skipping:/ && task == "client_init" { '
             'client_init=1 } /^skipping:/ && task == "client_backup" { '
-            'client_backup=1 } END { exit !(server && client && server_runtime '
-            '&& client_check && client_init && client_backup) } \' '
+            'client_backup=1 } /^skipping:/ && task == "enable_backup" { '
+            'enable_backup=1 } /^skipping:/ && task == "enable_check" { '
+            'enable_check=1 } END { exit !(server && client && server_runtime '
+            '&& client_check && client_init && client_backup && backup_service '
+            '&& backup_timer && check_service && check_timer && enable_backup '
+            '&& enable_check) } \' '
             '"$fresh_check_output" uv run molecule verify -s fresh-check '
             "--no-report uv run molecule destroy -s fresh-check --no-report "
             "trap - EXIT"

@@ -111,7 +111,9 @@
   loop_control:
     loop_var: job_name
     label: "{{ job_name }}"
-  when: offsitebuddy_start_services | bool
+  when:
+    - offsitebuddy_start_services | bool
+    - not ansible_check_mode
 
 - name: Enable check timers
   ansible.builtin.systemd:
@@ -125,5 +127,6 @@
     label: "{{ job.name }}"
   when:
     - offsitebuddy_start_services | bool
+    - not ansible_check_mode
     - (job.check | default({})).enabled | default(true) | bool
   no_log: true
