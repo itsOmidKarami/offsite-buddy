@@ -58,3 +58,4 @@
   loop: "{{ offsitebuddy_quota_write_probes.results }}"
   loop_control:
     label: "{{ item.item.name | default(item.item.path) }}"
+  when: not ansible_check_mode
